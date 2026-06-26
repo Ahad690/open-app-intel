@@ -162,6 +162,16 @@ review_id, video_id, url, name, developer`.
 Contribution is **OFF by default**: it requires BOTH dropping `--dry-run` AND an
 `HF_TOKEN`. There is no background upload.
 
+Each contribution is written to `contributions/<you>-<content-hash>.json`, so
+repeat or parallel contributions never overwrite each other (and identical data
+re-contributed is idempotent). `--existing <file.json>` dedups against anchors
+already in the dataset. The guard `assert_public_only` aborts on **any** banned
+field *and* on any field not on the public whitelist (defense in depth), and your
+name is appended to `CONTRIBUTORS.md` on a successful upload.
+
+After every collection/refresh run, a short colored reminder shows how to
+contribute. Turn it off with `federation.contribute_reminder = false`.
+
 A contribution row is only:
 `platform, category, country, list_type, rank, observed_downloads, window_days,
 min_installs, real_installs, price_usd, is_free, rating_count, captured_on`.

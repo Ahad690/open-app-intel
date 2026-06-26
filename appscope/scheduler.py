@@ -84,18 +84,23 @@ def main(argv: list[str] | None = None) -> None:
     db = Database(cfg.storage.path)
     db.bootstrap()
 
-    if args.once:
+    from .reminders import print_contribute_reminder
+
+    def collect_and_remind() -> None:
         run_collection(db, cfg)
+        print_contribute_reminder(cfg)
+
+    if args.once:
+        collect_and_remind()
         return
 
     from apscheduler.schedulers.blocking import BlockingScheduler
 
     sched = BlockingScheduler(timezone="UTC")
     sched.add_job(
-        run_collection,
+        collect_and_remind,
         "cron",
         hour=cfg.schedule.daily_hour_utc,
-        args=[db, cfg],
         id="daily_collection",
     )
     log.info("scheduler started; daily at %02d:00 UTC", cfg.schedule.daily_hour_utc)

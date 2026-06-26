@@ -66,6 +66,9 @@ class FederationConfig(BaseModel):
     # Anti-flood ceiling for auto-merge (rows a single PR may add).
     max_rows_per_pr: int = 2000
     abuse: AbuseConfig = Field(default_factory=AbuseConfig)
+    # Show a "how to contribute" reminder after each run. On by default;
+    # set false to silence it.
+    contribute_reminder: bool = True
 
 
 class ScheduleConfig(BaseModel):

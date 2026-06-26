@@ -131,6 +131,75 @@ def test_refresh_dry_run_previews_without_merge(tmp_path):
     assert db.conn.execute("SELECT COUNT(*) c FROM flow_anchors").fetchone()["c"] == 0
 
 
+def test_assert_public_only_rejects_unexpected_field():
+    # Defense in depth: a non-banned but non-whitelisted field also aborts.
+    with pytest.raises(ValueError) as exc:
+        assert_public_only([{"platform": "android", "rank": 1, "observed_downloads": 1,
+                             "window_days": 30, "surprise_column": "x"}])
+    assert "non-whitelisted" in str(exc.value)
+
+
+def test_contribution_dedups_against_existing():
+    from appscope.federation.contribute import dedup
+    rec = {"platform": "android", "category": "all", "country": "us", "list_type": "top-free",
+           "rank": 10, "observed_downloads": 336000, "window_days": 30, "captured_on": "2025-12-01"}
+    # Same record already in the dataset -> nothing new to contribute.
+    assert dedup([dict(rec)], existing=[dict(rec)]) == []
+    # A different record survives.
+    other = {**rec, "rank": 11}
+    assert dedup([other], existing=[dict(rec)]) == [other]
+
+
+def test_upload_filename_has_content_hash(monkeypatch):
+    from appscope.federation import contribute as cb
+    captured = {}
+
+    class _Op:
+        def __init__(self, path_in_repo, path_or_fileobj):
+            self.path_in_repo = path_in_repo
+
+    class _Api:
+        def __init__(self, *a, **k):
+            pass
+
+        def create_commit(self, **kw):
+            captured["path"] = kw["operations"][0].path_in_repo
+
+            class I:
+                pr_url = "http://pr"
+            return I()
+
+    import huggingface_hub
+    monkeypatch.setattr(huggingface_hub, "HfApi", _Api, raising=False)
+    monkeypatch.setattr(huggingface_hub, "CommitOperationAdd", _Op, raising=False)
+    rec = [{"platform": "android", "category": "all", "country": "us", "list_type": "top-free",
+            "rank": 10, "observed_downloads": 336000, "window_days": 30, "captured_on": "2025-12-01"}]
+    cb.upload_contribution(rec, "owner/repo", "tok", "alice")
+    # contributions/alice-<10 hex chars>.json
+    assert captured["path"].startswith("contributions/alice-")
+    assert captured["path"].endswith(".json")
+    digest = captured["path"].split("alice-", 1)[1][:-5]
+    assert len(digest) == 10 and all(c in "0123456789abcdef" for c in digest)
+
+
+def test_contribute_reminder_plain_and_color():
+    from appscope.config import Config
+    from appscope.reminders import contribute_reminder_text, print_contribute_reminder
+    import io
+
+    cfg = Config()
+    plain = contribute_reminder_text(cfg.federation.dataset_repo, color=False)
+    assert "contribute" in plain.lower() and "\033[" not in plain
+    colored = contribute_reminder_text(cfg.federation.dataset_repo, color=True)
+    assert "\033[" in colored
+
+    # Disabled => prints nothing.
+    cfg.federation.contribute_reminder = False
+    buf = io.StringIO()
+    print_contribute_reminder(cfg, stream=buf)
+    assert buf.getvalue() == ""
+
+
 def test_automerge_banned_matches_canonical():
     # The CI auto-merge script inlines BANNED for dependency isolation; it must
     # never drift from the canonical guard in contribute.py.

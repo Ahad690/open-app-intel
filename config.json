@@ -22,7 +22,8 @@
       "min_unique_ratio": 0.5,
       "outlier_factor": 10,
       "outlier_min_rows": 3
-    }
+    },
+    "contribute_reminder": true
   },
   "schedule": { "daily_hour_utc": 6 },
   "keys": { "meta_ad_library_token_env": "META_AD_TOKEN",

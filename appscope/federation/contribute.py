@@ -59,31 +59,49 @@ def strip_to_anchor_schema(row: dict) -> dict:
 
 
 def assert_public_only(records: list[dict]) -> None:
-    """Hard guard (P8): abort if any ad/creator/identity field is present."""
+    """Hard guard (P8): abort before anything leaves the machine.
+
+    Two layers (matching the fiverr-gig-optimizer PII guard):
+      1. any explicitly banned ad/creator/identity field => abort,
+      2. any field NOT on the public anchor whitelist => abort (defense in depth:
+         even an unexpected/new column can't ride through).
+    """
     for rec in records:
         bad = BANNED & set(rec)
         if bad:
             raise ValueError(f"refusing to upload non-public fields: {sorted(bad)}")
+        unexpected = set(rec) - ANCHOR_KEEP
+        if unexpected:
+            raise ValueError(f"refusing to upload non-whitelisted fields: {sorted(unexpected)}")
 
 
-def dedup(records: list[dict]) -> list[dict]:
-    """Drop exact-duplicate anchor records (stable order)."""
-    seen: set[str] = set()
+def _record_key(r: dict) -> str:
+    """Stable identity of an anchor record (post-strip) for dedup."""
+    return json.dumps(strip_to_anchor_schema(r), sort_keys=True)
+
+
+def dedup(records: list[dict], existing: list[dict] | None = None) -> list[dict]:
+    """Drop exact-duplicate anchor records (stable order).
+
+    ``existing`` (e.g. anchors already in the dataset) are pre-seeded so already-
+    contributed rows are skipped — cross-file dedup, like fiver's ``--existing``.
+    """
+    seen: set[str] = {_record_key(r) for r in (existing or [])}
     out: list[dict] = []
     for r in records:
-        key = json.dumps(r, sort_keys=True)
+        key = _record_key(r)
         if key not in seen:
             seen.add(key)
             out.append(r)
     return out
 
 
-def build_contribution(db: Database) -> list[dict]:
+def build_contribution(db: Database, existing: list[dict] | None = None) -> list[dict]:
     """Collect local anchors, strip to the anchor schema, guard, and dedup."""
     rows = db.fetch_shareable_anchors()
     records = [strip_to_anchor_schema(r) for r in rows]
     assert_public_only(records)  # must pass before any upload
-    return dedup(records)
+    return dedup(records, existing=existing)
 
 
 def _repo_id_from_url(dataset_repo: str) -> str:
@@ -102,13 +120,19 @@ def upload_contribution(
     Returns the PR/commit URL. Re-asserts the guard immediately before upload.
     """
     assert_public_only(records)  # belt-and-suspenders right before network I/O
+    import hashlib
+
     from huggingface_hub import CommitOperationAdd, HfApi
 
     repo_id = _repo_id_from_url(dataset_repo)
     api = HfApi(token=hf_token)
     payload = json.dumps({"anchors": records}, indent=2).encode("utf-8")
     safe_name = "".join(c for c in contributor if c.isalnum() or c in "-_") or "anon"
-    path_in_repo = f"contributions/{safe_name}.json"
+    # Content-hash suffix so repeat/parallel contributions never overwrite each
+    # other (which would otherwise be a "modifies existing file" auto-merge hold);
+    # identical data re-contributed maps to the same file (idempotent).
+    digest = hashlib.sha256(payload).hexdigest()[:10]
+    path_in_repo = f"contributions/{safe_name}-{digest}.json"
     info = api.create_commit(
         repo_id=repo_id,
         repo_type="dataset",
@@ -120,19 +144,45 @@ def upload_contribution(
     return getattr(info, "pr_url", None) or str(info)
 
 
+def append_contributor(name: str, path: str = "CONTRIBUTORS.md") -> None:
+    """Append a contributor to CONTRIBUTORS.md (idempotent; non-fatal on error)."""
+    line = f"| {name} | anchors |\n"
+    try:
+        from pathlib import Path
+
+        p = Path(path)
+        if p.exists() and line in p.read_text(encoding="utf-8"):
+            return
+        with open(p, "a", encoding="utf-8") as fh:
+            fh.write(line)
+    except OSError as exc:
+        log.warning("could not update %s: %s", path, exc)
+
+
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     ap = argparse.ArgumentParser(description="Contribute public anchors to the HF dataset")
     ap.add_argument("--config", default="config.json")
     ap.add_argument("--dry-run", action="store_true", help="print cleaned records; upload nothing")
     ap.add_argument("--contributor", default=None, help="contributor name (required to upload)")
+    ap.add_argument("--existing", default=None,
+                    help="JSON of anchors already in the dataset, for cross-file dedup")
     args = ap.parse_args(argv)
 
     cfg = load_config(args.config)
     db = Database(cfg.storage.path)
     db.bootstrap()
 
-    records = build_contribution(db)
+    existing = None
+    if args.existing:
+        try:
+            with open(args.existing, encoding="utf-8") as fh:
+                data = json.load(fh)
+            existing = data.get("anchors", data) if isinstance(data, dict) else data
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"[warn] could not read --existing {args.existing}: {exc}")
+
+    records = build_contribution(db, existing=existing)
     print(f"# {len(records)} cleaned public anchor records (ads/creators excluded by guard):")
     print(json.dumps(records, indent=2))
 
@@ -149,7 +199,12 @@ def main(argv: list[str] | None = None) -> int:
         print("\n[abort] --contributor NAME required to open a PR.")
         return 1
 
+    if not records:
+        print("\nNothing new to contribute (all rows already present or empty).")
+        return 0
+
     url = upload_contribution(records, cfg.federation.dataset_repo, hf_token, args.contributor)
+    append_contributor(args.contributor)
     print(f"\n[uploaded] opened PR: {url}")
     return 0
 
