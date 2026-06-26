@@ -146,10 +146,6 @@ def main(argv: list[str] | None = None) -> int:
     print(json.dumps({**result, "revision": revision or "main"}, indent=2))
     if result["status"] in {"merged", "preview"}:
         print(json.dumps({"k6_coverage": db.calibration_coverage()}, indent=2))
-
-    from ..reminders import print_contribute_reminder
-
-    print_contribute_reminder(cfg)
     return 0
 
 

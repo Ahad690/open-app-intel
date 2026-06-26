@@ -9,11 +9,13 @@ Run: uvicorn appscope.api:app --reload   (or python -m appscope.api)
 from __future__ import annotations
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import HTMLResponse
 
 from .ads.intensity import ad_intensity_proxies
 from .config import load_config
 from .db import Database
 from .estimate import estimate_app
+from .reminders import landing_html
 
 app = FastAPI(title="AppScope", version="1.1.0")
 
@@ -24,6 +26,16 @@ _db.bootstrap()
 
 def get_db() -> Database:
     return _db
+
+
+@app.get("/", response_class=HTMLResponse)
+def landing() -> str:
+    """Human-facing landing page — carries the (toggleable) contribute banner.
+
+    The call-to-action lives here, on the artifact a user opens in a browser,
+    not in per-run terminal output (which only clogs whoever runs the scripts).
+    """
+    return landing_html(_cfg, version=app.version)
 
 
 @app.get("/health")

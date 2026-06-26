@@ -169,8 +169,10 @@ already in the dataset. The guard `assert_public_only` aborts on **any** banned
 field *and* on any field not on the public whitelist (defense in depth), and your
 name is appended to `CONTRIBUTORS.md` on a successful upload.
 
-After every collection/refresh run, a short colored reminder shows how to
-contribute. Turn it off with `federation.contribute_reminder = false`.
+A "help the dataset grow" call-to-action appears as a banner on the local REST
+API landing page (`GET /`) — the artifact you actually open in a browser — not
+as per-run terminal output (which would just clog whoever runs the scripts).
+Turn it off with `federation.contribute_reminder = false`.
 
 A contribution row is only:
 `platform, category, country, list_type, rank, observed_downloads, window_days,

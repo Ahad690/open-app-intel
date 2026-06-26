@@ -182,22 +182,37 @@ def test_upload_filename_has_content_hash(monkeypatch):
     assert len(digest) == 10 and all(c in "0123456789abcdef" for c in digest)
 
 
-def test_contribute_reminder_plain_and_color():
+def test_contribution_banner_html_and_toggle():
     from appscope.config import Config
-    from appscope.reminders import contribute_reminder_text, print_contribute_reminder
-    import io
+    from appscope.reminders import (
+        contribution_enabled,
+        contribution_html,
+        landing_html,
+    )
 
     cfg = Config()
-    plain = contribute_reminder_text(cfg.federation.dataset_repo, color=False)
-    assert "contribute" in plain.lower() and "\033[" not in plain
-    colored = contribute_reminder_text(cfg.federation.dataset_repo, color=True)
-    assert "\033[" in colored
+    banner = contribution_html(cfg.federation.dataset_repo)
+    assert "contribute" in banner.lower()
+    assert cfg.federation.dataset_repo in banner  # links to the dataset
+    assert contribution_enabled(cfg) is True
 
-    # Disabled => prints nothing.
+    # On => landing page carries the banner.
+    page_on = landing_html(cfg, version="1.1.0")
+    assert "Help the free app-intelligence dataset grow" in page_on
+
+    # Off => landing page omits it.
     cfg.federation.contribute_reminder = False
-    buf = io.StringIO()
-    print_contribute_reminder(cfg, stream=buf)
-    assert buf.getvalue() == ""
+    assert contribution_enabled(cfg) is False
+    page_off = landing_html(cfg, version="1.1.0")
+    assert "Help the free app-intelligence dataset grow" not in page_off
+
+
+def test_contribution_banner_escapes_repo():
+    from appscope.reminders import contribution_html
+    # A repo string with HTML metacharacters must be escaped (no raw injection).
+    banner = contribution_html('https://x/"><script>alert(1)</script>')
+    assert "<script>" not in banner
+    assert "&lt;script&gt;" in banner
 
 
 def test_automerge_banned_matches_canonical():
