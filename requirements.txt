@@ -1,0 +1,12 @@
+requests>=2.31
+fastapi>=0.110
+uvicorn>=0.29
+apscheduler>=3.10
+pydantic>=2
+google-play-scraper>=1.2
+huggingface_hub>=0.23
+mcp>=1.2
+
+# Optional (operator-installed as needed):
+#   psycopg2-binary        # Postgres backend
+#   pytest                 # test suite (Section 14)

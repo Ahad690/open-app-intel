@@ -1,0 +1,44 @@
+# Optional self-host stack. SQLite is the zero-config default; this compose file
+# shows the optional Postgres backend. There is NO central server — this runs on
+# YOUR machine only.
+services:
+  api:
+    build: .
+    command: uvicorn appscope.api:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    environment:
+      # Keys are read from the env (never stored). Supply your own.
+      - META_AD_TOKEN=${META_AD_TOKEN:-}
+      - YOUTUBE_API_KEY=${YOUTUBE_API_KEY:-}
+      - HF_TOKEN=${HF_TOKEN:-}
+    volumes:
+      - ./:/app
+    depends_on:
+      - postgres
+
+  scheduler:
+    build: .
+    command: python -m appscope.scheduler
+    environment:
+      - META_AD_TOKEN=${META_AD_TOKEN:-}
+      - YOUTUBE_API_KEY=${YOUTUBE_API_KEY:-}
+      - HF_TOKEN=${HF_TOKEN:-}
+    volumes:
+      - ./:/app
+    depends_on:
+      - postgres
+
+  # Optional Postgres backend (SQLite is the default; set storage.backend
+  # accordingly in config.json if you wire a Postgres adapter).
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=appscope
+      - POSTGRES_PASSWORD=appscope
+      - POSTGRES_DB=appscope
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
