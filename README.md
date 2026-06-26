@@ -26,6 +26,9 @@ The **only** shared component is an opt-in Hugging Face dataset of **public
 app-store calibration anchors** that everyone pulls back to sharpen their
 estimates (see [Federation](#federation)).
 
+> 📖 For a full how-it-works walkthrough (the estimator math, the data model, and
+> the CI auto-merge setup), read **[USER_MANUAL.md](USER_MANUAL.md)**.
+
 ---
 
 ## What it does
@@ -158,6 +161,12 @@ list_type, rank, observed_downloads, window_days, min_installs, real_installs,
 price_usd, is_free, rating_count, captured_on`. `app_id` is intentionally
 omitted. **No ads, no creators, no identity** — enforced by `assert_public_only`
 and proven by `tests/test_anchor_guard.py`. See **[DATA_POLICY.md](DATA_POLICY.md)**.
+
+Contribution PRs are auto-merged daily by a GitHub Action
+(`.github/workflows/automerge-dataset-prs.yml`) that **re-validates every anchor
+row on the receiving side** before merging — see
+[USER_MANUAL.md §7](USER_MANUAL.md#7-automated-pr-merging-ci) for the one-time
+`HF_TOKEN` secret setup.
 
 ---
 

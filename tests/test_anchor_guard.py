@@ -131,6 +131,38 @@ def test_refresh_dry_run_previews_without_merge(tmp_path):
     assert db.conn.execute("SELECT COUNT(*) c FROM flow_anchors").fetchone()["c"] == 0
 
 
+def test_automerge_banned_matches_canonical():
+    # The CI auto-merge script inlines BANNED for dependency isolation; it must
+    # never drift from the canonical guard in contribute.py.
+    from appscope.federation import automerge_prs
+    assert automerge_prs.BANNED == BANNED
+
+
+def test_automerge_validate_contribution_file(tmp_path):
+    import json as _json
+    from appscope.federation import automerge_prs
+
+    good = tmp_path / "good.json"
+    good.write_text(_json.dumps({"anchors": [_good(10)]}), encoding="utf-8")
+    ok, reason, n = automerge_prs.validate_contribution_file(str(good))
+    assert ok and n == 1
+
+    leaky = tmp_path / "leaky.json"
+    leaky.write_text(_json.dumps({"anchors": [{**_good(10), "app_id": "com.x"}]}), encoding="utf-8")
+    ok, reason, _ = automerge_prs.validate_contribution_file(str(leaky))
+    assert not ok and "banned" in reason
+
+    empty = tmp_path / "empty.json"
+    empty.write_text(_json.dumps({"anchors": []}), encoding="utf-8")
+    ok, reason, _ = automerge_prs.validate_contribution_file(str(empty))
+    assert not ok and reason == "no_anchor_rows"
+
+    malformed = tmp_path / "bad.json"
+    malformed.write_text("{not json", encoding="utf-8")
+    ok, reason, _ = automerge_prs.validate_contribution_file(str(malformed))
+    assert not ok and "unreadable_json" in reason
+
+
 def test_refresh_merges_and_recalibrates(tmp_path):
     db = Database(str(tmp_path / "t.db")); db.bootstrap()
     incoming = [_good(r, captured="2026-01-%02d" % (r + 1)) for r in range(1, 11)]

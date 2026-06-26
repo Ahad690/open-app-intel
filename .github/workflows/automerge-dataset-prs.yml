@@ -1,0 +1,47 @@
+name: Auto-merge dataset PRs
+
+# Auto-merges clean community contribution PRs on the Hugging Face anchor
+# dataset. The HF write capability comes ENTIRELY from the HF_TOKEN secret —
+# this is NOT git push; huggingface_hub makes authenticated HTTPS API calls.
+#
+# Setup (one time):
+#   1. Create a fine-grained HF token with WRITE access to the dataset repo
+#      (do NOT use an `hf auth login` OAuth token — those expire and the
+#      scheduled run will silently start failing).
+#   2. gh secret set HF_TOKEN -R Ahad690/open-app-intel   (paste the token)
+
+on:
+  workflow_dispatch: {}          # manual "Run workflow" button / gh workflow run
+  schedule:
+    - cron: "0 6 * * *"          # daily 06:00 UTC — the automatic trigger
+
+permissions:
+  contents: read                 # this governs the built-in GITHUB_TOKEN; it is
+                                 # unrelated to HF (HF auth is the secret below).
+
+concurrency:
+  group: automerge-dataset-prs
+  cancel-in-progress: false
+
+jobs:
+  automerge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependency
+        run: pip install "huggingface_hub>=0.23"   # the only dependency needed
+
+      - name: Auto-merge clean anchor PRs
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}        # secret -> env var
+        run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "HF_TOKEN secret not set; skipping (no-op)."
+            exit 0
+          fi
+          python -m appscope.federation.automerge_prs --repo Ahad690/app-rank-anchors

@@ -442,16 +442,29 @@ class Database:
             inserted += self.insert_flow_anchors([anchor], source="local")
         return inserted
 
-    def load_sample_anchors(
-        self, path: str | Path = "data/anchors.sample.json"
+    def load_example_anchors(
+        self, path: str | Path = "data/anchors.example.json"
     ) -> int:
-        """Seed bundled public-fact anchors (source='community'). Idempotent."""
+        """Load SYNTHETIC example anchors for tests/demos only. Idempotent.
+
+        WARNING: ``data/anchors.example.json`` is fabricated demo data, not real
+        observations. Do NOT call this on a production database you contribute
+        from — it would taint your local calibration and, if shared, violate P8
+        ('pool observations, never fabricated numbers'). Real anchors come from
+        ``seed_flow_anchors_from_buckets`` (your own captures) or
+        ``refresh_dataset`` (the community dataset). The loader refuses files not
+        explicitly marked ``"_synthetic": true``.
+        """
         import json
 
         p = Path(path)
         if not p.exists():
             return 0
         data = json.loads(p.read_text(encoding="utf-8"))
+        if not data.get("_synthetic"):
+            raise ValueError(
+                f"{p} is not marked '_synthetic': true; refusing to load as example data"
+            )
         anchors = data.get("anchors", [])
         return self.insert_flow_anchors(anchors, source="community")
 

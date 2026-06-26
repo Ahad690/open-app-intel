@@ -1,5 +1,6 @@
 {
-  "_comment": "Bundled public-fact calibration anchor seed (CC-BY-4.0). Each row is segment + rank + observed download flow + bucket/metadata. No app identity, no ads, no creators (P8). observed_downloads are 30-day flows. Loaded as source='community'.",
+  "_synthetic": true,
+  "_warning": "SYNTHETIC / FABRICATED DEMO DATA — NOT real observations. These rows were hand-constructed to lie exactly on the Garg-Telang power-law curve (so calibration trivially recovers the chosen scale_b). They exist ONLY to exercise tests and demos. NEVER load this into a database you contribute from, and NEVER upload it to the federated dataset (that would violate P8: 'pool observations, never fabricated numbers'). Real anchors come only from actual install-bucket deltas captured by the collectors, or pulled from the community dataset via refresh_dataset.py.",
   "anchors": [
     {"platform": "android", "category": "all", "country": "us", "list_type": "top-free", "rank": 1,  "observed_downloads": 3000000, "window_days": 30, "min_installs": 100000000, "real_installs": 480000000, "price_usd": 0.0, "is_free": 1, "rating_count": 12000000, "captured_on": "2025-12-01"},
     {"platform": "android", "category": "all", "country": "us", "list_type": "top-free", "rank": 5,  "observed_downloads": 650000,  "window_days": 30, "min_installs": 50000000,  "real_installs": 90000000,  "price_usd": 0.0, "is_free": 1, "rating_count": 2400000,  "captured_on": "2025-12-01"},
