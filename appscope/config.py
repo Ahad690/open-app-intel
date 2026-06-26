@@ -49,6 +49,11 @@ class FederationConfig(BaseModel):
     auto_contribute: bool = False
     min_new_on_refresh: int = 50
     max_corrupt_ratio: float = 0.25
+    # Recovery layer: pin refresh to a reviewed commit SHA/tag so a bad
+    # auto-merge on main cannot reach you. None => pull main HEAD.
+    pinned_revision: str | None = None
+    # Anti-flood ceiling for auto-merge (rows a single PR may add).
+    max_rows_per_pr: int = 2000
 
 
 class ScheduleConfig(BaseModel):

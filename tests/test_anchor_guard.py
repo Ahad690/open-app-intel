@@ -163,6 +163,118 @@ def test_automerge_validate_contribution_file(tmp_path):
     assert not ok and "unreadable_json" in reason
 
 
+class _FakeSibling:
+    def __init__(self, rfilename, blob_id):
+        self.rfilename = rfilename
+        self.blob_id = blob_id
+        self.lfs = None
+
+
+class _FakeInfo:
+    def __init__(self, siblings):
+        self.siblings = siblings
+
+
+class _FakeApi:
+    """Minimal stand-in for HfApi to exercise evaluate_pr guard layers offline."""
+
+    def __init__(self, main_files, pr_files, pr_payloads):
+        # *_files: dict path -> blob_id ; pr_payloads: path -> file content (str)
+        self._main = main_files
+        self._pr = pr_files
+        self._payloads = pr_payloads
+
+    def get_discussion_details(self, repo_id, num, repo_type=None):
+        class D:
+            git_reference = "refs/pr/1"
+        return D()
+
+    def repo_info(self, repo_id, repo_type=None, revision=None, files_metadata=True):
+        files = self._pr if revision else self._main
+        return _FakeInfo([_FakeSibling(p, b) for p, b in files.items()])
+
+
+def _run_eval(monkeypatch, api, payloads):
+    import appscope.federation.automerge_prs as am
+
+    def fake_dl(repo_id, filename, revision=None, repo_type=None, **kw):
+        import tempfile, os
+        fd, path = tempfile.mkstemp(suffix=".json")
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(payloads[filename])
+        return path
+
+    monkeypatch.setattr(am, "hf_hub_download", fake_dl, raising=False)
+    monkeypatch.setattr("huggingface_hub.hf_hub_download", fake_dl, raising=False)
+    return am.evaluate_pr(api, "repo/x", 1)
+
+
+def test_automerge_rejects_file_deletion(monkeypatch):
+    api = _FakeApi(
+        main_files={"README.md": "a", "contributions/old.json": "b"},
+        pr_files={"README.md": "a"},  # old.json removed
+        pr_payloads={},
+    )
+    v = _run_eval(monkeypatch, api, {})
+    assert not v["merge"] and "removes existing file" in v["reason"]
+
+
+def test_automerge_rejects_file_modification(monkeypatch):
+    api = _FakeApi(
+        main_files={"README.md": "a"},
+        pr_files={"README.md": "MODIFIED"},  # same path, different blob
+        pr_payloads={},
+    )
+    v = _run_eval(monkeypatch, api, {})
+    assert not v["merge"] and "modifies existing file" in v["reason"]
+
+
+def test_automerge_rejects_addition_outside_contributions(monkeypatch):
+    api = _FakeApi(
+        main_files={"README.md": "a"},
+        pr_files={"README.md": "a", "evil.py": "x"},
+        pr_payloads={},
+    )
+    v = _run_eval(monkeypatch, api, {})
+    assert not v["merge"] and "non-contribution file" in v["reason"]
+
+
+def test_automerge_size_cap(monkeypatch):
+    import json as _json
+    payload = _json.dumps({"anchors": [_good(r % 1000 + 1) for r in range(50)]})
+    api = _FakeApi(
+        main_files={"README.md": "a"},
+        pr_files={"README.md": "a", "contributions/big.json": "newblob"},
+        pr_payloads={},
+    )
+    import appscope.federation.automerge_prs as am
+
+    def fake_dl(repo_id, filename, revision=None, repo_type=None, **kw):
+        import tempfile, os
+        fd, path = tempfile.mkstemp(suffix=".json")
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(payload)
+        return path
+
+    # evaluate_pr does a function-local `from huggingface_hub import hf_hub_download`,
+    # so patch the source module symbol.
+    monkeypatch.setattr("huggingface_hub.hf_hub_download", fake_dl, raising=False)
+    v = am.evaluate_pr(api, "repo/x", 1, max_rows=10)
+    assert not v["merge"] and "too_large" in v["reason"]
+
+
+def test_automerge_accepts_clean_additive_pr(monkeypatch):
+    import json as _json
+    payload = _json.dumps({"anchors": [_good(1), _good(5)]})
+    api = _FakeApi(
+        main_files={"README.md": "a"},
+        pr_files={"README.md": "a", "contributions/alice.json": "newblob"},
+        pr_payloads={},
+    )
+    v = _run_eval(monkeypatch, api, {"contributions/alice.json": payload})
+    assert v["merge"] and v["rows"] == 2
+
+
 def test_refresh_merges_and_recalibrates(tmp_path):
     db = Database(str(tmp_path / "t.db")); db.bootstrap()
     incoming = [_good(r, captured="2026-01-%02d" % (r + 1)) for r in range(1, 11)]

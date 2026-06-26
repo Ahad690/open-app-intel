@@ -32,8 +32,14 @@ def validate_anchor(r: dict) -> bool:
     )
 
 
-def fetch_hf_dataset(dataset_repo: str, hf_token: str | None = None) -> list[dict]:
+def fetch_hf_dataset(
+    dataset_repo: str, hf_token: str | None = None, revision: str | None = None
+) -> list[dict]:
     """Download and concatenate anchor rows from every JSON file in the dataset.
+
+    ``revision`` pins the pull to a specific commit SHA, tag, or branch. Pinning
+    to a reviewed snapshot is the recovery layer: a bad auto-merge on ``main``
+    can't reach a consumer pinned to a known-good revision. ``None`` => ``main``.
 
     Best-effort and network-dependent; returns ``[]`` on failure so a refresh
     never crashes a local install.
@@ -48,16 +54,22 @@ def fetch_hf_dataset(dataset_repo: str, hf_token: str | None = None) -> list[dic
     rows: list[dict] = []
     try:
         api = HfApi(token=hf_token)
-        files = [f for f in api.list_repo_files(repo_id, repo_type="dataset") if f.endswith(".json")]
+        files = [
+            f
+            for f in api.list_repo_files(repo_id, repo_type="dataset", revision=revision)
+            if f.endswith(".json")
+        ]
         for fname in files:
-            path = hf_hub_download(repo_id, fname, repo_type="dataset", token=hf_token)
+            path = hf_hub_download(
+                repo_id, fname, repo_type="dataset", token=hf_token, revision=revision
+            )
             with open(path, encoding="utf-8") as fh:
                 data = json.load(fh)
             anchors = data.get("anchors", data) if isinstance(data, dict) else data
             if isinstance(anchors, list):
                 rows.extend(a for a in anchors if isinstance(a, dict))
     except Exception as exc:
-        log.warning("failed to fetch HF dataset %s: %s", repo_id, exc)
+        log.warning("failed to fetch HF dataset %s@%s: %s", repo_id, revision or "main", exc)
         return []
     return rows
 
@@ -69,14 +81,21 @@ def refresh(
     max_corrupt_ratio: float = 0.25,
     dry_run: bool = False,
     *,
+    revision: str | None = None,
+    hf_token: str | None = None,
     fetcher: Callable[[], list[dict]] | None = None,
 ) -> dict:
     """Pull, validate, gate, merge, and recalibrate.
 
+    ``revision`` pins the pull to a reviewed commit/tag (recovery layer).
     ``fetcher`` overrides the default HF download (used in tests). Returns a
     status dict: ``refused`` / ``noop`` / ``preview`` / ``merged``.
     """
-    incoming = fetcher() if fetcher is not None else fetch_hf_dataset(dataset_repo)
+    incoming = (
+        fetcher()
+        if fetcher is not None
+        else fetch_hf_dataset(dataset_repo, hf_token=hf_token, revision=revision)
+    )
     clean = [r for r in incoming if validate_anchor(r)]
     corrupt = len(incoming) - len(clean)
     if incoming and corrupt / len(incoming) > max_corrupt_ratio:
@@ -103,11 +122,17 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Refresh local calibration from the HF anchor dataset")
     ap.add_argument("--config", default="config.json")
     ap.add_argument("--dry-run", action="store_true", help="preview; merge nothing")
+    ap.add_argument("--revision", default=None,
+                    help="pin the pull to a commit SHA/tag/branch (overrides config.pinned_revision)")
     args = ap.parse_args(argv)
 
     cfg = load_config(args.config)
     db = Database(cfg.storage.path)
     db.bootstrap()
+
+    revision = args.revision or cfg.federation.pinned_revision
+    if revision:
+        log.info("pinned pull: %s@%s", cfg.federation.dataset_repo, revision)
 
     result = refresh(
         db,
@@ -115,8 +140,10 @@ def main(argv: list[str] | None = None) -> int:
         min_new=cfg.federation.min_new_on_refresh,
         max_corrupt_ratio=cfg.federation.max_corrupt_ratio,
         dry_run=args.dry_run,
+        revision=revision,
+        hf_token=cfg.hf_token(),
     )
-    print(json.dumps(result, indent=2))
+    print(json.dumps({**result, "revision": revision or "main"}, indent=2))
     if result["status"] in {"merged", "preview"}:
         print(json.dumps({"k6_coverage": db.calibration_coverage()}, indent=2))
     return 0

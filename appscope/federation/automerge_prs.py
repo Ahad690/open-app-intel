@@ -24,6 +24,9 @@ from typing import Any
 
 log = logging.getLogger("automerge")
 
+# Anti-flood: max anchor rows a single PR may add to be auto-mergeable (L2).
+DEFAULT_MAX_ROWS = 2000
+
 # Mirror of appscope.federation.contribute.BANNED. Kept inline so this script has
 # no intra-package imports (CI only installs huggingface_hub). A test
 # (test_anchor_guard.py::test_automerge_banned_matches_canonical) asserts these
@@ -76,8 +79,36 @@ def validate_contribution_file(path: str) -> tuple[bool, str, int]:
     return True, "ok", len(anchors)
 
 
-def evaluate_pr(api, repo_id: str, num: int) -> dict:
-    """Validate one PR's changes. Returns a verdict dict (no side effects)."""
+def _blob_map(api, repo_id: str, revision: str | None = None) -> dict[str, str | None]:
+    """Map every file path -> its git blob id at ``revision`` (main if None).
+
+    Identical content yields an identical blob id across refs, so comparing maps
+    detects added / removed / modified files without downloading anything.
+    """
+    info = api.repo_info(
+        repo_id, repo_type="dataset", revision=revision, files_metadata=True
+    )
+    out: dict[str, str | None] = {}
+    for s in info.siblings or []:
+        blob = getattr(s, "blob_id", None)
+        if blob is None:
+            lfs = getattr(s, "lfs", None)
+            blob = getattr(lfs, "sha256", None) if lfs is not None else None
+        out[s.rfilename] = blob
+    return out
+
+
+def evaluate_pr(api, repo_id: str, num: int, *, max_rows: int = DEFAULT_MAX_ROWS) -> dict:
+    """Validate one PR's changes. Returns a verdict dict (no side effects).
+
+    Guard stack (all must pass to merge):
+      L1c  removes no existing file
+      L1d  modifies no existing file (blob-id compare)
+      L1a  adds only files under contributions/
+      L1b  adds at least one contribution file
+      L2   total added rows <= max_rows (anti-flood)
+      L3   every added anchor row is a valid public anchor (no banned fields)
+    """
     from huggingface_hub import hf_hub_download
 
     details = api.get_discussion_details(repo_id, num, repo_type="dataset")
@@ -85,35 +116,56 @@ def evaluate_pr(api, repo_id: str, num: int) -> dict:
     if not ref:
         return {"num": num, "merge": False, "reason": "no_git_reference"}
 
-    files_at_pr = set(api.list_repo_files(repo_id, revision=ref, repo_type="dataset"))
-    files_on_main = set(api.list_repo_files(repo_id, repo_type="dataset"))
+    main_map = _blob_map(api, repo_id)            # main
+    pr_map = _blob_map(api, repo_id, ref)         # PR branch
 
-    # Only auto-merge PRs that add files exclusively under contributions/.
-    added_outside = {
-        f for f in (files_at_pr - files_on_main) if not f.startswith("contributions/")
-    }
+    # L1c — no deletions.
+    removed = set(main_map) - set(pr_map)
+    if removed:
+        return {"num": num, "merge": False, "reason": f"removes existing file(s): {sorted(removed)}"}
+
+    # L1d — no in-place modification of any existing file (incl. the dataset card).
+    # Only flag when both blob ids are known, to avoid false positives on files
+    # whose blob id can't be resolved (e.g. some LFS entries).
+    modified = sorted(
+        f
+        for f in (set(main_map) & set(pr_map))
+        if main_map[f] is not None and pr_map[f] is not None and main_map[f] != pr_map[f]
+    )
+    if modified:
+        return {"num": num, "merge": False, "reason": f"modifies existing file(s): {modified}"}
+
+    # L1a — additions must live exclusively under contributions/.
+    added = set(pr_map) - set(main_map)
+    added_outside = {f for f in added if not f.startswith("contributions/")}
     if added_outside:
-        return {
-            "num": num,
-            "merge": False,
-            "reason": f"adds non-contribution file(s): {sorted(added_outside)}",
-        }
+        return {"num": num, "merge": False, "reason": f"adds non-contribution file(s): {sorted(added_outside)}"}
 
-    contrib_files = [f for f in files_at_pr if f.startswith("contributions/") and f.endswith(".json")]
-    if not contrib_files:
-        return {"num": num, "merge": False, "reason": "no_contribution_files"}
+    # L1b — at least one new contribution file.
+    added_contrib = [f for f in added if f.startswith("contributions/") and f.endswith(".json")]
+    if not added_contrib:
+        return {"num": num, "merge": False, "reason": "no_new_contribution_files"}
 
+    # L3 + L2 — validate each added file's rows; enforce the size cap.
     total_rows = 0
-    for f in contrib_files:
+    for f in added_contrib:
         local = hf_hub_download(repo_id, f, revision=ref, repo_type="dataset")
         ok, reason, n = validate_contribution_file(local)
         if not ok:
             return {"num": num, "merge": False, "reason": f"{f}: {reason}"}
         total_rows += n
+        if total_rows > max_rows:
+            return {
+                "num": num,
+                "merge": False,
+                "reason": f"too_large: {total_rows} rows exceeds max_rows={max_rows}",
+            }
     return {"num": num, "merge": True, "reason": "all_public_anchors", "rows": total_rows}
 
 
-def run(repo_id: str, token: str, dry_run: bool = False) -> list[dict]:
+def run(
+    repo_id: str, token: str, dry_run: bool = False, *, max_rows: int = DEFAULT_MAX_ROWS
+) -> list[dict]:
     from huggingface_hub import HfApi
 
     api = HfApi(token=token)
@@ -122,7 +174,7 @@ def run(repo_id: str, token: str, dry_run: bool = False) -> list[dict]:
     )
     results: list[dict] = []
     for d in discussions:
-        verdict = evaluate_pr(api, repo_id, d.num)
+        verdict = evaluate_pr(api, repo_id, d.num, max_rows=max_rows)
         verdict["title"] = d.title
         if verdict["merge"]:
             if dry_run:
@@ -152,6 +204,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--repo", default="Ahad690/app-rank-anchors", help="HF dataset repo id")
     ap.add_argument("--token", default=None, help="HF write token (else $HF_TOKEN)")
     ap.add_argument("--dry-run", action="store_true", help="evaluate only; merge nothing")
+    ap.add_argument("--max-rows", type=int, default=None,
+                    help="reject PRs adding more than this many rows "
+                         "(default: config federation.max_rows_per_pr, else 2000)")
+    ap.add_argument("--config", default="config.json",
+                    help="config file to read federation.max_rows_per_pr from")
     args = ap.parse_args(argv)
 
     token = args.token or os.environ.get("HF_TOKEN")
@@ -159,7 +216,18 @@ def main(argv: list[str] | None = None) -> int:
         log.warning("no HF_TOKEN provided; nothing to do")
         return 0
 
-    results = run(args.repo, token, dry_run=args.dry_run)
+    # Resolve the size cap: CLI > config.json > built-in default. Read the JSON
+    # directly so this script stays self-contained (no package import) in CI.
+    max_rows = args.max_rows
+    if max_rows is None:
+        max_rows = DEFAULT_MAX_ROWS
+        try:
+            with open(args.config, encoding="utf-8") as fh:
+                max_rows = json.load(fh).get("federation", {}).get("max_rows_per_pr", DEFAULT_MAX_ROWS)
+        except (OSError, json.JSONDecodeError):
+            pass
+
+    results = run(args.repo, token, dry_run=args.dry_run, max_rows=max_rows)
     merged = sum(1 for r in results if r["merge"])
     skipped = len(results) - merged
     print(json.dumps({"open_prs": len(results), "merged": merged, "skipped": skipped,

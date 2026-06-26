@@ -12,7 +12,9 @@
     "dataset_repo": "https://huggingface.co/datasets/Ahad690/app-rank-anchors",
     "auto_contribute": false,
     "min_new_on_refresh": 50,
-    "max_corrupt_ratio": 0.25
+    "max_corrupt_ratio": 0.25,
+    "pinned_revision": null,
+    "max_rows_per_pr": 2000
   },
   "schedule": { "daily_hour_utc": 6 },
   "keys": { "meta_ad_library_token_env": "META_AD_TOKEN",

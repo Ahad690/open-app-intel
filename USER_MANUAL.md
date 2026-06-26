@@ -189,14 +189,38 @@ fine-grained HF token → GitHub repo secret (HF_TOKEN) → workflow env var
   → huggingface_hub → HF REST API
 ```
 
-The workflow runs `appscope/federation/automerge_prs.py`, which:
-1. lists open PRs on the dataset,
-2. downloads each PR's `contributions/*.json` from its `refs/pr/<n>` ref,
-3. **validates every anchor row** (the same public-only guard, on the receiving
-   side), rejecting any PR that adds non-contribution files or any row with a
-   banned field,
-4. **merges** clean PRs (`merge_pull_request`), or comments and leaves dirty ones
-   open for human review.
+The workflow runs `appscope/federation/automerge_prs.py`, which lists open PRs
+and merges one ONLY if it clears every guard layer (else it comments the reason
+and leaves the PR open for a human — never a silent drop):
+
+| Layer | Guard |
+| ----- | ----- |
+| L0 | only **open** PRs are considered (idempotent / re-runnable) |
+| L1c | **removes no** existing file (blob-id diff via `repo_info(files_metadata=True)`) |
+| L1d | **modifies no** existing file, incl. the dataset card (blob-id diff) |
+| L1a | adds files **only** under `contributions/*.json` |
+| L1b | adds at least one contribution file |
+| L2 | total added rows ≤ `federation.max_rows_per_pr` (default 2000) — anti-flood |
+| L3 | **every** anchor row is a valid public anchor: right schema, in-range, and **no** ad/creator/identity field (any bad row holds the whole PR) |
+
+**Recovery layer (the safety net).** A Hugging Face repo *is* a git repo, so
+nothing is ever truly overwritten and any bad merge is one corrective commit
+away from undone (we used exactly this to delete the synthetic seed). Two
+practices make that real:
+
+- **Pin consumers.** Set `federation.pinned_revision` to a reviewed commit SHA
+  or tag; `refresh_dataset` then pulls *that* revision instead of `main`, so a
+  bad auto-merge on `main` can't reach you until you bump the pin. CLI override:
+  `python -m appscope.federation.refresh_dataset --revision <sha-or-tag>`.
+- **Tag known-good snapshots** after review:
+  `huggingface_hub.HfApi().create_tag("Ahad690/app-rank-anchors", tag="v1", revision="<sha>", repo_type="dataset")`,
+  then point `pinned_revision` at `v1`.
+
+So **prevention** (L0–L3) narrows the blast radius; **versioning + pinning**
+guarantees recovery. The honest boundary: these layers prove a row is
+well-formed, in-range, and identity-free — they do **not** prove the numbers are
+authentic. A patient adversary could submit plausible, in-distribution fake
+data. That residual risk is exactly why the recovery layer matters.
 
 The script is self-contained (only needs `huggingface_hub`) so CI stays tiny; a
 test (`test_automerge_banned_matches_canonical`) keeps its inlined guard in sync
