@@ -202,6 +202,13 @@ and leaves the PR open for a human — never a silent drop):
 | L1b | adds at least one contribution file |
 | L2 | total added rows ≤ `federation.max_rows_per_pr` (default 2000) — anti-flood |
 | L3 | **every** anchor row is a valid public anchor: right schema, in-range, and **no** ad/creator/identity field (any bad row holds the whole PR) |
+| L4 | **anti-abuse heuristics** on well-formed-but-suspicious data: absolute ceilings (`rank ≤ 2000`, `window_days ≤ 365`, implied monthly downloads `≤ 100M`), duplicate-flooding (unique-row ratio `≥ 0.5`), and per-segment median that is a wild multiple (`>10×` or `<0.1×`) of the reference distribution already on `main` (scale manipulation). All thresholds live in `config.json` `federation.abuse`. The outlier check auto-activates only once a segment has ≥3 reference rows, so it is silent on a fresh/empty dataset. |
+
+> **Concurrent-PR staleness (safe by design).** A PR's branch is a snapshot of
+> `main` at branch time. If another PR merges first, open PRs branched earlier
+> will look like they *delete/modify* the newly-merged files, so L1c/L1d will
+> **HOLD** them. This never causes a wrong merge — only a conservative hold. The
+> contributor resolves it by rebasing (or closing + re-running `contribute`).
 
 **Recovery layer (the safety net).** A Hugging Face repo *is* a git repo, so
 nothing is ever truly overwritten and any bad merge is one corrective commit

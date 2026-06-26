@@ -44,6 +44,17 @@ class CreatorsConfig(BaseModel):
     brand_hashtags_by_app: dict[str, list[str]] = Field(default_factory=dict)
 
 
+class AbuseConfig(BaseModel):
+    """L4 anti-abuse thresholds for auto-merge (suspicious -> HOLD for review)."""
+
+    max_rank: int = 2000
+    max_window_days: int = 365
+    max_monthly_downloads: int = 100_000_000
+    min_unique_ratio: float = 0.5
+    outlier_factor: float = 10
+    outlier_min_rows: int = 3
+
+
 class FederationConfig(BaseModel):
     dataset_repo: str = "https://huggingface.co/datasets/Ahad690/app-rank-anchors"
     auto_contribute: bool = False
@@ -54,6 +65,7 @@ class FederationConfig(BaseModel):
     pinned_revision: str | None = None
     # Anti-flood ceiling for auto-merge (rows a single PR may add).
     max_rows_per_pr: int = 2000
+    abuse: AbuseConfig = Field(default_factory=AbuseConfig)
 
 
 class ScheduleConfig(BaseModel):

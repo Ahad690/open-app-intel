@@ -14,7 +14,15 @@
     "min_new_on_refresh": 50,
     "max_corrupt_ratio": 0.25,
     "pinned_revision": null,
-    "max_rows_per_pr": 2000
+    "max_rows_per_pr": 2000,
+    "abuse": {
+      "max_rank": 2000,
+      "max_window_days": 365,
+      "max_monthly_downloads": 100000000,
+      "min_unique_ratio": 0.5,
+      "outlier_factor": 10,
+      "outlier_min_rows": 3
+    }
   },
   "schedule": { "daily_hour_utc": 6 },
   "keys": { "meta_ad_library_token_env": "META_AD_TOKEN",

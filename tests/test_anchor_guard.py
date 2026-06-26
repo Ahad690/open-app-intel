@@ -163,6 +163,89 @@ def test_automerge_validate_contribution_file(tmp_path):
     assert not ok and "unreadable_json" in reason
 
 
+def test_abuse_scan_clean_when_unremarkable():
+    from appscope.federation.automerge_prs import abuse_scan
+    rows = [_good(r) for r in (1, 5, 10, 20, 50)]
+    assert abuse_scan(rows, reference_rows=[], cfg=None) == []
+
+
+def test_abuse_scan_rank_ceiling():
+    from appscope.federation.automerge_prs import abuse_scan
+    rows = [{"platform": "android", "rank": 99999, "observed_downloads": 100,
+             "window_days": 30, "category": "all", "country": "us", "list_type": "top-free"}]
+    reasons = abuse_scan(rows, [], None)
+    assert any("rank" in r and "ceiling" in r for r in reasons)
+
+
+def test_abuse_scan_window_ceiling():
+    from appscope.federation.automerge_prs import abuse_scan
+    rows = [{"platform": "android", "rank": 5, "observed_downloads": 100,
+             "window_days": 5000, "category": "all", "country": "us", "list_type": "top-free"}]
+    reasons = abuse_scan(rows, [], None)
+    assert any("window_days" in r for r in reasons)
+
+
+def test_abuse_scan_monthly_downloads_ceiling():
+    from appscope.federation.automerge_prs import abuse_scan
+    # 9e9 over 30 days -> ~9e9 monthly, far over the 1e8 ceiling
+    rows = [{"platform": "android", "rank": 1, "observed_downloads": 9_000_000_000,
+             "window_days": 30, "category": "all", "country": "us", "list_type": "top-free"}]
+    reasons = abuse_scan(rows, [], None)
+    assert any("monthly downloads" in r for r in reasons)
+
+
+def test_abuse_scan_duplicate_flooding():
+    from appscope.federation.automerge_prs import abuse_scan
+    dup = {"platform": "android", "rank": 5, "observed_downloads": 1000, "window_days": 30,
+           "category": "all", "country": "us", "list_type": "top-free", "captured_on": "2026-01-01"}
+    rows = [dict(dup) for _ in range(10)]  # all identical
+    reasons = abuse_scan(rows, [], None)
+    assert any("duplicate flooding" in r for r in reasons)
+
+
+def test_abuse_scan_distribution_outlier_vs_reference():
+    from appscope.federation.automerge_prs import abuse_scan
+    seg = {"platform": "android", "category": "all", "country": "us", "list_type": "top-free", "window_days": 30}
+    # Reference: ~100k/month at this segment (3 rows, enough to judge).
+    reference = [{**seg, "rank": r, "observed_downloads": 100_000} for r in (3, 4, 6)]
+    # PR: same segment but ~5,000,000/month (50x) -> outlier.
+    pr_rows = [{**seg, "rank": r, "observed_downloads": 5_000_000} for r in (3, 4, 6)]
+    reasons = abuse_scan(pr_rows, reference, None)
+    assert any("outlier" in r for r in reasons)
+
+
+def test_abuse_scan_outlier_silent_without_enough_reference():
+    from appscope.federation.automerge_prs import abuse_scan
+    seg = {"platform": "android", "category": "all", "country": "us", "list_type": "top-free", "window_days": 30}
+    reference = [{**seg, "rank": 3, "observed_downloads": 100_000}]  # only 1 ref row < min_rows
+    pr_rows = [{**seg, "rank": r, "observed_downloads": 5_000_000} for r in (3, 4, 6)]
+    # Not enough reference rows in the segment -> outlier check stays silent.
+    assert abuse_scan(pr_rows, reference, None) == []
+
+
+def test_evaluate_pr_holds_suspicious(monkeypatch):
+    import json as _json
+    from appscope.federation import automerge_prs as am
+    # A PR with an implausible monthly-downloads row -> suspicious HOLD.
+    payload = _json.dumps({"anchors": [{"platform": "android", "rank": 1,
+        "observed_downloads": 9_000_000_000, "window_days": 30, "category": "all",
+        "country": "us", "list_type": "top-free"}]})
+    api = _FakeApi(main_files={"README.md": "a"},
+                   pr_files={"README.md": "a", "contributions/x.json": "newblob"},
+                   pr_payloads={})
+
+    def fake_dl(repo_id, filename, revision=None, repo_type=None, **kw):
+        import tempfile, os
+        fd, path = tempfile.mkstemp(suffix=".json")
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(payload)
+        return path
+
+    monkeypatch.setattr("huggingface_hub.hf_hub_download", fake_dl, raising=False)
+    v = am.evaluate_pr(api, "repo/x", 1)
+    assert not v["merge"] and v["reason"].startswith("suspicious:")
+
+
 class _FakeSibling:
     def __init__(self, rfilename, blob_id):
         self.rfilename = rfilename
