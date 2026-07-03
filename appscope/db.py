@@ -162,6 +162,27 @@ class Database:
         ).fetchall()
         return [r["name"] for r in rows]
 
+    def backup(self, dest_dir: str | Path = "backups") -> str:
+        """Write a consistent, timestamped snapshot of the whole database.
+
+        Uses SQLite's online backup API (safe while the DB is in use). Nothing
+        is ever pruned automatically — old backups are kept until the user
+        deletes them (no-data-destroyed policy).
+        """
+        import time
+
+        dest = Path(dest_dir)
+        dest.mkdir(parents=True, exist_ok=True)
+        stem = Path(self.path).stem or "appscope"
+        target = dest / f"{stem}-{time.strftime('%Y%m%d%H%M%S')}.db"
+        out = sqlite3.connect(str(target))
+        try:
+            with out:
+                self.conn.backup(out)
+        finally:
+            out.close()
+        return str(target)
+
     # -- writes: apps / ranks / buckets / reviews (Stage 1) -------------------
 
     def upsert_app(self, app: dict) -> None:
@@ -200,11 +221,15 @@ class Database:
             )
 
     def insert_rank(self, row: dict) -> None:
-        """Insert one rank_history row (one per app/country/list/category/date)."""
+        """Insert one rank_history row (one per app/country/list/category/date).
+
+        Append-only: OR IGNORE keeps the first observation for a key — a
+        same-day re-collect never overwrites captured history (no data loss).
+        """
         with self.transaction() as conn:
             conn.execute(
                 """
-                INSERT OR REPLACE INTO rank_history
+                INSERT OR IGNORE INTO rank_history
                     (app_id, country, list_type, category, rank, captured_on)
                 VALUES (:app_id, :country, :list_type, :category, :rank, :captured_on)
                 """,
@@ -219,11 +244,15 @@ class Database:
             )
 
     def insert_install_bucket(self, row: dict) -> None:
-        """Insert one Android install_buckets row (the anchor source, FR3)."""
+        """Insert one Android install_buckets row (the anchor source, FR3).
+
+        Append-only: OR IGNORE — an observed bucket, once captured for a date,
+        is never overwritten (it is the calibration ground truth).
+        """
         with self.transaction() as conn:
             conn.execute(
                 """
-                INSERT OR REPLACE INTO install_buckets
+                INSERT OR IGNORE INTO install_buckets
                     (app_id, min_installs, real_installs, captured_on)
                 VALUES (:app_id, :min_installs, :real_installs, :captured_on)
                 """,
@@ -653,6 +682,8 @@ class Database:
     # -- estimate persistence -------------------------------------------------
 
     def upsert_estimate(self, row: dict) -> None:
+        """Estimates are DERIVED (recomputable from ranks + anchors any time),
+        so replacing the day's row is safe — observations are never touched."""
         with self.transaction() as conn:
             conn.execute(
                 """

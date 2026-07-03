@@ -1,0 +1,10 @@
+{
+  "name": "appscope",
+  "version": "1.1.0",
+  "description": "Honest, self-hosted app market intelligence as a Claude Code skill. Collects store rankings, metadata, install buckets, and reviews locally; produces confidence-banded download/revenue estimates (never fabricated, never above MEDIUM); renders an app-intel report. Opt-in federation of public calibration anchors.",
+  "author": { "name": "AppScope contributors" },
+  "homepage": "https://github.com/Ahad690/open-app-intel",
+  "repository": "https://github.com/Ahad690/open-app-intel",
+  "license": "MIT",
+  "keywords": ["aso", "app-store", "market-intelligence", "downloads", "app-analytics", "google-play", "ios"]
+}

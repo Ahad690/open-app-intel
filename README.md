@@ -81,7 +81,33 @@ estimates (see [Federation](#federation)).
 
 ---
 
-## Install
+## Use as a Claude Code skill (the easy way)
+
+```
+/plugin marketplace add Ahad690/open-app-intel
+/plugin install appscope@appscope-marketplace
+```
+
+Then just ask — *"how many downloads does com.spotify.music get?"* — or run
+`/appscope`. Claude collects the app into your local DB, answers with the
+estimator's confidence-banded envelopes verbatim (never a fabricated number),
+and renders **`app-intel-report.html`** with provenance on every row. Under the
+hood it drives the same JSON CLI you can use yourself:
+
+```bash
+python -m appscope.cli collect  --app <id> [--charts]
+python -m appscope.cli summary  --app <id>            # observed facts (HIGH)
+python -m appscope.cli estimate --app <id>            # banded estimate (≤ MEDIUM)
+python -m appscope.cli report   --app <id>            # the HTML deliverable
+python -m appscope.cli backup                         # timestamped DB snapshot
+```
+
+**No data is ever destroyed:** captured observations (ranks, install buckets,
+reviews) are append-only — a re-collect can never overwrite history; derived
+estimates are recomputable; `backup` snapshots are never pruned. Your data
+accumulates locally until you opt in to contribute anchors (see Federation).
+
+## Install (manual)
 
 ```bash
 git clone <your-fork> open-app-intel && cd open-app-intel

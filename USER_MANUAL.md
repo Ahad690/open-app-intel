@@ -266,6 +266,33 @@ no-ops cleanly if the secret is unset.
 
 ## 8. Querying your data
 
+### The Claude Code skill (easiest)
+
+```
+/plugin marketplace add Ahad690/open-app-intel
+/plugin install appscope@appscope-marketplace
+```
+
+Then just describe what you want — *"how many downloads does app X get?"* —
+or run `/appscope`. Claude asks for the store link (it resolves the id from
+the URL), collects the app into your local DB, presents the estimator's
+envelopes verbatim (value + band + confidence + method + flags), and writes
+**`app-intel-report.html`**. The same commands work standalone:
+
+```bash
+python -m appscope.cli collect  --app <id> [--charts]  # append-only capture
+python -m appscope.cli summary  --app <id>             # observed facts (HIGH)
+python -m appscope.cli estimate --app <id>             # banded estimate (≤ MEDIUM)
+python -m appscope.cli report   --app <id>             # HTML deliverable
+python -m appscope.cli backup                          # DB snapshot (never pruned)
+```
+
+**No data loss, guaranteed:** captured observations are append-only (a same-day
+re-collect can never overwrite history — the first observation wins; new days
+accumulate); estimates/calibration are derived and recomputable; SQLite writes
+are transactional; and `backup` keeps every timestamped snapshot until *you*
+delete it. Contributing anchors never removes anything locally.
+
 ### REST API
 ```bash
 uvicorn appscope.api:app --host 127.0.0.1 --port 8000

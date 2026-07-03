@@ -1,0 +1,18 @@
+{
+  "name": "appscope-marketplace",
+  "owner": { "name": "Ahad690" },
+  "metadata": {
+    "description": "AppScope — honest self-hosted app market intelligence.",
+    "version": "1.1.0"
+  },
+  "plugins": [
+    {
+      "name": "appscope",
+      "source": "./",
+      "description": "Honest app market intelligence (Claude Code skill): local collection, confidence-banded estimates, no fabricated numbers.",
+      "version": "1.1.0",
+      "license": "MIT",
+      "keywords": ["aso", "app-store", "market-intelligence"]
+    }
+  ]
+}

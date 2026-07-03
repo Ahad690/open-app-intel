@@ -1,8 +1,15 @@
-# Local databases (never federated)
+# Local databases (never federated) + timestamped backups (never pruned)
 *.db
 *.db-journal
 *.sqlite
 *.sqlite3
+backups/
+
+# Generated per-user deliverables (the skill writes these locally)
+app-intel-report.html
+
+# Local config with the user's own settings/keys
+config.json
 
 # Secrets / env
 .env
