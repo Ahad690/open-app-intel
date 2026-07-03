@@ -218,3 +218,17 @@ each platform's ToS; the legal landscape is unsettled. **Estimates are modeled,
 not measured** — labeled as such; the project warrants nothing about accuracy.
 
 Code: MIT ([LICENSE](LICENSE)). Data + docs: CC-BY-4.0 ([LICENSE-DATA](LICENSE-DATA)).
+
+## Related projects (same honesty architecture)
+
+AppScope is part of a family of **local-first, no-fabricated-numbers Claude
+Code skills** — deterministic scripts, provenance envelopes, an HTML
+deliverable, append-only local data, opt-in federation:
+
+- [**GrowthKit**](https://github.com/Ahad690/growthkit-skill) — honest
+  short-form-video marketing (TikTok/Reels/Shorts) for SaaS & apps. Running
+  both? AppScope's download estimate can feed GrowthKit's triangulated
+  organic-attribution band as an extra owned signal.
+- [**fiverr-gig-optimizer**](https://github.com/Ahad690/fiverr-gig-optimizer) —
+  research-backed Fiverr gig catalogs; home of the shared
+  [HF auto-merge community-dataset pattern](https://github.com/Ahad690/fiverr-gig-optimizer/tree/main/patterns/hf-community-dataset).
