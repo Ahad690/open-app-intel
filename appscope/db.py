@@ -458,7 +458,10 @@ class Database:
             # Modal segment dims from the rank rows (fallbacks are conservative).
             country = _mode([r.get("country") for r in rank_rows]) or app.get("country") or "us"
             list_type = _mode([r.get("list_type") for r in rank_rows]) or "top-free"
-            category = app.get("category") or _mode([r.get("category") for r in rank_rows]) or "all"
+            # Prefer the CHART segment where the rank was observed (usually
+            # "all") over app-metadata categories — keeps anchors poolable
+            # instead of fragmenting across dozens of Play categories.
+            category = _mode([r.get("category") for r in rank_rows]) or app.get("category") or "all"
             captured_on = buckets[-1]["captured_on"]
             anchor.update(
                 {

@@ -37,6 +37,34 @@ def _collect_ios_charts(db: Database, cfg: Config) -> int:
     return inserted
 
 
+def _collect_android_charts(db: Database, cfg: Config, num: int = 100,
+                            bucket_top_n: int = 30) -> int:
+    """Capture Google Play top-free charts - the Android RANK source (FR8).
+
+    Without Android chart ranks, install-bucket deltas can never become flow
+    anchors (an anchor is a (rank, flow) pair). Best-effort: a failed fetch
+    logs and returns what it got. The top-N chart apps also get their install
+    buckets captured, so they join the self-maintaining anchor fleet.
+    """
+    from .collectors import play_charts
+
+    inserted = 0
+    fleet_joiners: list[str] = []
+    for country in cfg.tracking.countries:
+        rows = play_charts.fetch_play_chart(country=country, collection="top-free", num=num)
+        for row in rows:
+            db.upsert_app(row)
+            db.insert_rank(row)
+            inserted += 1
+        fleet_joiners.extend(r["app_id"] for r in rows[:bucket_top_n])
+    for app_id in dict.fromkeys(fleet_joiners):  # dedup, order-preserving
+        try:
+            _collect_app(db, cfg, app_id)
+        except Exception as exc:  # noqa: BLE001 - one bad app never kills the run
+            log.error("android chart app %s failed: %s", app_id, exc)
+    return inserted
+
+
 def _collect_app(db: Database, cfg: Config, app_id: str) -> None:
     """Collect metadata, install buckets (Android), and reviews for one tracked app."""
     for country in cfg.tracking.countries:
@@ -60,6 +88,12 @@ def run_collection(db: Database, cfg: Config) -> dict:
         summary["ranks"] = _collect_ios_charts(db, cfg)
     except Exception as exc:  # defensive: a source crash must not kill the run
         log.error("ios chart collection failed: %s", exc)
+        summary["errors"] += 1
+
+    try:
+        summary["ranks"] += _collect_android_charts(db, cfg)
+    except Exception as exc:  # defensive: a source crash must not kill the run
+        log.error("android chart collection failed: %s", exc)
         summary["errors"] += 1
 
     for app_id in cfg.tracking.apps:

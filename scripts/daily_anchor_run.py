@@ -57,8 +57,14 @@ def main(argv: list[str] | None = None) -> int:
     try:
         chart_rows = scheduler._collect_ios_charts(db, cfg)
     except Exception as exc:  # noqa: BLE001
-        print(f"[warn] chart collection failed: {exc}")
+        print(f"[warn] ios chart collection failed: {exc}")
         chart_rows = 0
+    # Android charts are the RANK half of every anchor: top-N chart apps also
+    # get their buckets captured, joining the fleet automatically.
+    try:
+        chart_rows += scheduler._collect_android_charts(db, cfg)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[warn] android chart collection failed: {exc}")
 
     # 3. Re-collect the anchor fleet: every Android app with a bucket on file.
     fleet = [r["app_id"] for r in db.conn.execute(
