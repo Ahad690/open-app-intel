@@ -31,3 +31,6 @@ Thumbs.db
 # Background research (not part of the shipped project)
 Open-source AppKittie alternatives*.md
 open-app-intel-PRD.md
+
+# Daily-run logs (append-only, local)
+logs/
