@@ -91,6 +91,8 @@ estimates (see [Federation](#federation)).
 
 ## The three known gaps (stated plainly)
 
+<img src="assets/mascot-shrug.png" width="150" align="right" alt="The AppScope periscope drooping in an apologetic shrug beside an empty radar ring — when a segment is uncalibrated, it says so">
+
 1. **Downloads / revenue — partially solvable, and improves with the shared
    dataset.** Calibrating absolute scale is the hard part; federation pools
    install-bucket-derived anchors so segments reach ≥5 anchors and graduate
@@ -192,6 +194,8 @@ Tools exposed: `app_estimate`, `ad_intensity`, `creator_mentions`, `rank_history
 
 ## Federation
 
+<img src="assets/mascot-hug.png" width="140" align="right" alt="The AppScope periscope hugging a pull-request icon — contributions grow everyone's calibration">
+
 The estimator's weak link is calibrating absolute scale (`scale_b`), which needs
 anchor points that are scarce solo. Federating Android install-bucket deltas as
 observed download-flow anchors pools enough data to calibrate per segment.
@@ -258,5 +262,8 @@ deliverable, append-only local data, opt-in federation:
   [HF auto-merge community-dataset pattern](https://github.com/Ahad690/fiverr-gig-optimizer/tree/main/patterns/hf-community-dataset).
 
 <div align="center">
+<img src="assets/mascot-sleep.png" width="120" alt="The AppScope periscope powered down for the night in a tiny nightcap, zzz">
+<br>
+<sub><code>~ end of file · estimates stayed ≤ MEDIUM the whole way ~</code></sub>
 <img src="https://capsule-render.vercel.app/api?type=waving&height=90&color=0:2e9e5b,100:0e1a12&section=footer" alt="" width="100%">
 </div>
