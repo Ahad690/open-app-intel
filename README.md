@@ -1,4 +1,28 @@
-# AppScope — Open App Intelligence Stack
+<div align="center">
+
+<img src="assets/mascot.png" width="130" alt="The AppScope periscope, scanning a wall of app icons">
+
+# AppScope
+
+**app intelligence, capped at honest** 🔭
+
+<img src="https://readme-typing-svg.demolab.com?font=JetBrains+Mono&weight=600&size=20&duration=2600&pause=800&color=56D364&center=true&vCenter=true&width=720&height=42&lines=Self-hosted+app+market+intelligence;Estimates+are+ranges%2C+capped+at+MEDIUM;Refuses+dollar+ad+spend+%E2%80%94+proxies+only" alt="AppScope — self-hosted app market intelligence, estimates capped at MEDIUM">
+
+<br/>
+
+![observed](https://img.shields.io/badge/observed_fact-HIGH-56d364?style=flat-square&labelColor=0e2818)
+![estimate](https://img.shields.io/badge/estimate-%E2%89%A4_MEDIUM-e8c66b?style=flat-square&labelColor=3a2806)
+![ad_spend](https://img.shields.io/badge/dollar_ad_spend-never_modeled-f85149?style=flat-square&labelColor=4a0a14)
+
+<br/>
+
+<img src="assets/demo-report.png" width="860" alt="A rendered app-intel-report.html — observed rank and install bucket at HIGH confidence, download estimate as a band at MEDIUM, revenue honestly not modeled">
+
+*The deliverable: observed facts are HIGH, estimates are bands, missing data says so.*
+
+</div>
+
+<br/>
 
 A **self-hosted, federated** open-source app market-intelligence tool + MCP
 server. An honest OSS take on the reproducible ~60% of tools like AppKittie /
@@ -232,3 +256,7 @@ deliverable, append-only local data, opt-in federation:
 - [**fiverr-gig-optimizer**](https://github.com/Ahad690/fiverr-gig-optimizer) —
   research-backed Fiverr gig catalogs; home of the shared
   [HF auto-merge community-dataset pattern](https://github.com/Ahad690/fiverr-gig-optimizer/tree/main/patterns/hf-community-dataset).
+
+<div align="center">
+<img src="https://capsule-render.vercel.app/api?type=waving&height=90&color=0:2e9e5b,100:0e1a12&section=footer" alt="" width="100%">
+</div>
