@@ -4,9 +4,13 @@
 
 # AppScope
 
-**app intelligence, capped at honest** 🔭
+**vendors sell app "installs" from a black box. this shows the facts, bands the guesses.** 🔭
 
 <img src="https://readme-typing-svg.demolab.com?font=JetBrains+Mono&weight=600&size=20&duration=2600&pause=800&color=56D364&center=true&vCenter=true&width=720&height=42&lines=Self-hosted+app+market+intelligence;Estimates+are+ranges%2C+capped+at+MEDIUM;Refuses+dollar+ad+spend+%E2%80%94+proxies+only" alt="AppScope — self-hosted app market intelligence, estimates capped at MEDIUM">
+
+<br/>
+
+**411 apps · 597 ranks · 7,203 reviews — all observed · estimates ≤ MEDIUM · $0 ad-spend invented**
 
 <br/>
 
