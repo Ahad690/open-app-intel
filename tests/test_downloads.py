@@ -66,6 +66,39 @@ def test_derive_flow_anchor_accepts_iso_strings():
     assert anchor and anchor["window_days"] == 30
 
 
+def test_derive_flow_anchor_none_on_bucket_boundary_crossing():
+    # realInstalls is refreshed lumpily at minInstalls bucket boundaries; a delta
+    # that spans two buckets is a counter-refresh artifact, not an observed flow.
+    buckets = [
+        {"min_installs": 10_000_000, "real_installs": 12_000_000, "captured_on": _d("2025-01-01")},
+        {"min_installs": 50_000_000, "real_installs": 46_000_000, "captured_on": _d("2025-01-05")},
+    ]
+    ranks = [{"rank": 8, "captured_on": _d("2025-01-03")}]
+    assert derive_flow_anchor(buckets, ranks) is None
+
+
+def test_derive_flow_anchor_within_bucket_still_valid():
+    # Same bucket + plausible growth => still a real anchor (guards must not over-reject).
+    buckets = [
+        {"min_installs": 10_000_000, "real_installs": 12_000_000, "captured_on": _d("2025-01-01")},
+        {"min_installs": 10_000_000, "real_installs": 12_300_000, "captured_on": _d("2025-01-31")},
+    ]
+    ranks = [{"rank": 8, "captured_on": _d("2025-01-15")}]
+    anchor = derive_flow_anchor(buckets, ranks)
+    assert anchor and anchor["observed_downloads"] == 300_000
+
+
+def test_derive_flow_anchor_none_on_implausible_growth():
+    # A 4-day jump implying >100%/month growth of the base is a refresh artifact.
+    buckets = [
+        {"min_installs": 100_000_000, "real_installs": 120_000_000, "captured_on": _d("2025-01-01")},
+        {"min_installs": 100_000_000, "real_installs": 154_000_000, "captured_on": _d("2025-01-05")},
+    ]
+    ranks = [{"rank": 85, "captured_on": _d("2025-01-03")}]
+    # 34M over 4d -> 255M/month, well over the 120M base -> rejected.
+    assert derive_flow_anchor(buckets, ranks) is None
+
+
 def test_calibrate_scale_recovers_known_scale():
     # Build anchors exactly on d(rank)=b*rank^-a with b=3,000,000, monthly window.
     a = shape_a("android", "top-free")

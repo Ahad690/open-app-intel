@@ -354,29 +354,43 @@ def run(
     )
     results: list[dict] = []
     for d in discussions:
-        verdict = evaluate_pr(
-            api, repo_id, d.num,
-            max_rows=max_rows, reference_rows=reference_rows, abuse_cfg=abuse_cfg,
-        )
+        # Each PR is handled independently: one failure (a 403 from a read-only
+        # token, a network blip, a single malformed PR) must never abort the batch
+        # or block a clean PR from merging. Errors are recorded and surfaced via the
+        # exit code, but the loop always continues.
+        try:
+            verdict = evaluate_pr(
+                api, repo_id, d.num,
+                max_rows=max_rows, reference_rows=reference_rows, abuse_cfg=abuse_cfg,
+            )
+        except Exception as exc:  # evaluation (network/parse) failure — skip this PR
+            log.warning("could not evaluate PR #%s: %s", d.num, exc)
+            results.append({"num": d.num, "title": d.title, "merge": False,
+                            "reason": "evaluation_error", "error": str(exc)})
+            continue
         verdict["title"] = d.title
-        if verdict["merge"]:
-            if dry_run:
-                log.info("[dry-run] would merge PR #%s (%s rows)", d.num, verdict.get("rows"))
+        try:
+            if verdict["merge"]:
+                if dry_run:
+                    log.info("[dry-run] would merge PR #%s (%s rows)", d.num, verdict.get("rows"))
+                else:
+                    api.merge_pull_request(
+                        repo_id, d.num, repo_type="dataset",
+                        comment=f"Auto-merged: {verdict.get('rows')} validated public anchors. "
+                                f"No ad/creator/identity fields present.",
+                    )
+                    log.info("merged PR #%s (%s rows)", d.num, verdict.get("rows"))
             else:
-                api.merge_pull_request(
-                    repo_id, d.num, repo_type="dataset",
-                    comment=f"Auto-merged: {verdict.get('rows')} validated public anchors. "
-                            f"No ad/creator/identity fields present.",
-                )
-                log.info("merged PR #%s (%s rows)", d.num, verdict.get("rows"))
-        else:
-            log.warning("skipping PR #%s: %s", d.num, verdict["reason"])
-            if not dry_run:
-                api.comment_discussion(
-                    repo_id, d.num, repo_type="dataset",
-                    comment="Auto-merge skipped — left open for human review. "
-                            f"Reason: {verdict['reason']}",
-                )
+                log.warning("skipping PR #%s: %s", d.num, verdict["reason"])
+                if not dry_run:
+                    api.comment_discussion(
+                        repo_id, d.num, repo_type="dataset",
+                        comment="Auto-merge skipped — left open for human review. "
+                                f"Reason: {verdict['reason']}",
+                    )
+        except Exception as exc:  # a write (merge/comment) failed — record, keep going
+            log.warning("action failed on PR #%s: %s", d.num, exc)
+            verdict["error"] = str(exc)
         results.append(verdict)
     return results
 
@@ -414,11 +428,14 @@ def main(argv: list[str] | None = None) -> int:
         pass
 
     results = run(args.repo, token, dry_run=args.dry_run, max_rows=max_rows, abuse_cfg=abuse_cfg)
-    merged = sum(1 for r in results if r["merge"])
-    skipped = len(results) - merged
+    merged = sum(1 for r in results if r.get("merge") and not r.get("error"))
+    errored = sum(1 for r in results if r.get("error"))
+    skipped = len(results) - merged - errored
     print(json.dumps({"open_prs": len(results), "merged": merged, "skipped": skipped,
-                      "results": results}, indent=2))
-    return 0
+                      "errored": errored, "results": results}, indent=2))
+    # Non-zero only when something genuinely failed (e.g. a 403) — clean PRs have
+    # already merged by this point, so a real problem stays visible without blocking.
+    return 1 if errored else 0
 
 
 if __name__ == "__main__":

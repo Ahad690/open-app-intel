@@ -47,15 +47,30 @@ def _as_date(value: object) -> dt.date:
     raise TypeError(f"unsupported date value: {value!r}")
 
 
+# A ``realInstalls`` figure is a *worldwide cumulative* counter Google refreshes in
+# lumpy steps, not a live per-day meter. Left unguarded, two artifacts masquerade as
+# huge download flows and (over short windows) blow past every sanity ceiling:
+#   1. a refresh that lands as the app crosses a ``minInstalls`` bucket boundary
+#      (1M/5M/10M/50M/100M...), and
+#   2. any jump so large it implies a mature app more than replacing its install
+#      base in a month.
+# Both are refresh noise, not observed flow — so we refuse to mint them as anchors
+# (honesty over a fabricated number). The automerge L4 ceiling is the receiving-side
+# backstop; this is the sending-side root fix.
+MAX_MONTHLY_GROWTH_RATIO = 1.0  # implied monthly flow may not exceed the base install count
+
+
 def derive_flow_anchor(
     bucket_rows: list[dict], rank_rows: list[dict]
 ) -> dict | None:
     """Derive a real observed download-flow anchor from >=2 install-bucket captures.
 
-    ``bucket_rows``: ``[{real_installs, captured_on}...]`` sorted by date.
-    ``rank_rows``:   ``[{rank, captured_on}...]`` over the same window.
+    ``bucket_rows``: ``[{real_installs, min_installs?, captured_on}...]`` sorted by
+    date. ``rank_rows``: ``[{rank, captured_on}...]`` over the same window.
     Returns ``{platform:'android', rank, observed_downloads, window_days}`` or
-    ``None`` when there is no valid positive-growth anchor.
+    ``None`` when there is no valid positive-growth anchor, or when the delta is a
+    counter-refresh artifact (bucket-boundary crossing / implausible growth) rather
+    than a genuine download flow.
     """
     if len(bucket_rows) < 2:
         return None
@@ -67,6 +82,20 @@ def derive_flow_anchor(
     ranks = sorted(r["rank"] for r in rank_rows if r.get("rank"))
     if delta <= 0 or window_days <= 0 or not ranks:
         return None  # not an anchor
+
+    # Guard 1 — bucket-boundary crossing. Different ``minInstalls`` buckets between
+    # the two captures => the ``realInstalls`` delta is contaminated by a boundary
+    # counter refresh, not a real flow.
+    m0, m1 = b0.get("min_installs"), b1.get("min_installs")
+    if m0 is not None and m1 is not None and m0 != m1:
+        return None
+
+    # Guard 2 — implausible growth. A cumulative counter gaining more than its own
+    # base in a month is a refresh artifact, not organic installs.
+    monthly = delta * 30.0 / window_days
+    if monthly > b0["real_installs"] * MAX_MONTHLY_GROWTH_RATIO:
+        return None
+
     return {
         "platform": "android",
         "rank": ranks[len(ranks) // 2],
