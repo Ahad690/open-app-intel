@@ -165,6 +165,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--config", default="config.json")
     ap.add_argument("--dry-run", action="store_true", help="print cleaned records; upload nothing")
     ap.add_argument("--contributor", default=None, help="contributor name (required to upload)")
+    ap.add_argument("--token", default=None,
+                    help="HF write token; cached for reuse (else $HF_TOKEN / cached token)")
     ap.add_argument("--existing", default=None,
                     help="JSON of anchors already in the dataset, for cross-file dedup")
     args = ap.parse_args(argv)
@@ -190,10 +192,20 @@ def main(argv: list[str] | None = None) -> int:
         print("\n[dry-run] nothing uploaded.")
         return 0
 
-    hf_token = cfg.hf_token()
+    from .token_bootstrap import bootstrap_token
+
+    if args.token:  # a freshly-pasted token: cache it so this is a one-time step
+        try:
+            from huggingface_hub import login
+
+            login(token=args.token, add_to_git_credential=False)
+        except Exception:
+            pass
+    # --token -> env HF_TOKEN -> cached token -> one-time guided setup (opens the page).
+    hf_token = args.token or cfg.hf_token() or bootstrap_token(cfg.federation.dataset_repo)
     if not hf_token:
-        print("\n[abort] no HF_TOKEN set; contribution is OFF by default. "
-              "Set the token env var to upload.")
+        print("\n[abort] no HF token; contribution is OFF by default. "
+              "Create one via the link above (or set HF_TOKEN), then re-run.")
         return 1
     if not args.contributor:
         print("\n[abort] --contributor NAME required to open a PR.")

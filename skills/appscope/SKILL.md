@@ -90,6 +90,15 @@ identity). Real upload needs the flag dropped AND an HF token.
 `python -m appscope.federation.refresh_dataset --dry-run` previews pulling
 community anchors (validated, corrupt-refusing, additive-only merge).
 
+**When the user asks to contribute** (e.g. "contribute my data", "share my
+anchors"): run `python contribute.py`. If it prints the token-setup guidance and
+a `huggingface.co/settings/tokens/new` link (i.e. no token is cached yet), relay
+that link to the user, tell them to create a fine-grained token with **Write** on
+the dataset repo, then re-run with the pasted token: `python contribute.py
+--token <pasted>` (it caches the token, so this is a one-time step). Always show
+the `--dry-run` preview first and confirm before the real upload. Never paste,
+store, or echo the token anywhere except the command; nothing uploads without it.
+
 ## Example
 "How many downloads does Spotify get on Android?" → intake (id
 `com.spotify.music`, country us) → collect → estimate returns

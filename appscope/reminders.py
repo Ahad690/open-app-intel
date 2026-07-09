@@ -32,8 +32,10 @@ def contribution_html(dataset_repo: str) -> str:
         'that sharpen download estimates for everyone — only public app-store '
         'facts are shared, never ads, creators, or identity. '
         f'Contribute yours to <a href="{repo}" style="color:#0a7d36;font-weight:600;" '
-        f'target="_blank" rel="noopener">the community dataset</a> with '
-        '<code>python -m appscope.federation.contribute --contributor &lt;you&gt;</code>.'
+        f'target="_blank" rel="noopener">the community dataset</a> — just run '
+        '<code>python contribute.py</code> (it walks you through a one-time token '
+        'setup, then remembers everything), or ask Claude to <em>&ldquo;contribute '
+        'my data&rdquo;</em>.'
         '</div>'
     )
 
