@@ -36,6 +36,12 @@ from the public Google Play `realInstalls` delta), and public bucket/metadata.
 > app sitting at rank R in country C"*, and anything built on it must be presented
 > that way, never as country-level downloads. Rows are also **windowed**: each
 > covers `window_days` between two counter refreshes, not a calendar month.
+>
+> Because the flow is global, **one flow appears once per country the app charted
+> in** — the same worldwide delta paired with a US rank, a GB rank, and so on.
+> Calibrate *within* a segment (`platform, list_type, category, country`), which is
+> what the estimator does. Concatenating every row and fitting one curve would
+> count the same flow several times.
 
 **`app_id` is intentionally omitted** — anchors need only (segment, rank, flow),
 never app identity. No personal data, no app identity, no ads, no creators.
