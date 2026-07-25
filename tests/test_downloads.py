@@ -88,6 +88,21 @@ def test_derive_flow_anchor_within_bucket_still_valid():
     assert anchor and anchor["observed_downloads"] == 300_000
 
 
+def test_derive_flow_anchor_none_over_absolute_ceiling():
+    # A giant app can gain less than its own base and STILL imply an absurd monthly
+    # flow. The relative guard passes it; the absolute ceiling (mirrored from the
+    # receiving side) must reject it, so we never mint what would only be held.
+    buckets = [
+        {"min_installs": 1_000_000_000, "real_installs": 5_000_000_000,
+         "captured_on": _d("2025-01-01")},
+        {"min_installs": 1_000_000_000, "real_installs": 5_020_000_000,
+         "captured_on": _d("2025-01-03")},
+    ]
+    ranks = [{"rank": 3, "captured_on": _d("2025-01-02")}]
+    # 20M over 2d -> 300M/month: far below the 5B base, far above the 100M ceiling.
+    assert derive_flow_anchor(buckets, ranks) is None
+
+
 def test_derive_flow_anchor_none_on_implausible_growth():
     # A 4-day jump implying >100%/month growth of the base is a refresh artifact.
     buckets = [

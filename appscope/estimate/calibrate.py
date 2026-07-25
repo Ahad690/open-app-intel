@@ -58,6 +58,13 @@ def _as_date(value: object) -> dt.date:
 # (honesty over a fabricated number). The automerge L4 ceiling is the receiving-side
 # backstop; this is the sending-side root fix.
 MAX_MONTHLY_GROWTH_RATIO = 1.0  # implied monthly flow may not exceed the base install count
+# Absolute plausibility ceiling, mirrored from the receiving side's anti-abuse
+# config (``automerge_prs.DEFAULT_ABUSE['max_monthly_downloads']``). The relative
+# guard above is not sufficient on its own: a billion-install app can gain less
+# than its own base and still imply an absurd monthly flow, which the receiving
+# side would hold. Keeping both sides consistent means we never mint an anchor we
+# know would be rejected.
+MAX_MONTHLY_DOWNLOADS = 100_000_000
 
 
 def derive_flow_anchor(
@@ -94,6 +101,10 @@ def derive_flow_anchor(
     # base in a month is a refresh artifact, not organic installs.
     monthly = delta * 30.0 / window_days
     if monthly > b0["real_installs"] * MAX_MONTHLY_GROWTH_RATIO:
+        return None
+
+    # Guard 3 — absolute ceiling, same figure the receiving side enforces.
+    if monthly > MAX_MONTHLY_DOWNLOADS:
         return None
 
     return {

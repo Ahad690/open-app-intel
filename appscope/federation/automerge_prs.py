@@ -246,6 +246,24 @@ def _blob_map(api, repo_id: str, revision: str | None = None) -> dict[str, str |
     return out
 
 
+def _merge_base(api, repo_id: str, ref: str) -> str | None:
+    """The commit where ``ref`` branched off main, or ``None`` if undeterminable.
+
+    Needed so a *stale* PR isn't mistaken for a destructive one: files merged into
+    main after the PR branched are simply absent from its head, which a naive
+    main-vs-head diff reads as deletions. Comparing against the branch point
+    instead makes "removed" mean *this PR actually deletes data*.
+    """
+    try:
+        main_shas = {c.commit_id for c in api.list_repo_commits(repo_id, repo_type="dataset")}
+        for c in api.list_repo_commits(repo_id, repo_type="dataset", revision=ref):
+            if c.commit_id in main_shas:
+                return c.commit_id
+    except Exception as exc:  # API/network — fall back to the conservative compare
+        log.warning("could not resolve merge base for %s: %s", ref, exc)
+    return None
+
+
 def evaluate_pr(
     api,
     repo_id: str,
@@ -273,8 +291,12 @@ def evaluate_pr(
     if not ref:
         return {"num": num, "merge": False, "reason": "no_git_reference"}
 
-    main_map = _blob_map(api, repo_id)            # main
-    pr_map = _blob_map(api, repo_id, ref)         # PR branch
+    pr_map = _blob_map(api, repo_id, ref)         # PR branch head
+    # Compare against the branch point, not current main: on an append-only
+    # dataset a stale PR legitimately lacks files merged after it branched, and
+    # git's merge keeps those. Falling back to main stays conservative.
+    base_rev = _merge_base(api, repo_id, ref)
+    main_map = _blob_map(api, repo_id, base_rev) if base_rev else _blob_map(api, repo_id)
 
     # L1c — no deletions.
     removed = set(main_map) - set(pr_map)
