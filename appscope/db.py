@@ -430,9 +430,17 @@ class Database:
     def seed_flow_anchors_from_buckets(self) -> int:
         """Derive local Android flow anchors from install-bucket deltas + ranks (FR8).
 
-        For each Android app with >=2 install-bucket captures, derive one anchor
-        using the app's observed ranks over the window, tagged with the app's
-        category and the modal (country, list_type) from its rank rows.
+        One anchor per (counter-refresh window x country the app charted in).
+
+        **What ``observed_downloads`` means:** a WORLDWIDE download flow. Play's
+        ``realInstalls`` is a global cumulative counter, so a bucket delta is a
+        global figure — it is *not* downloads within ``country``. ``country`` says
+        where the paired chart *rank* was observed. An anchor therefore reads as
+        "worldwide downloads for an app sitting at rank R in country C", and any
+        estimate built from it must be presented that way, never as country-level
+        downloads. Per-country charts still make these distinct, useful
+        observations: rank 10 in a small market implies a different worldwide
+        volume than rank 10 in a large one.
         """
         from .estimate.calibrate import derive_flow_anchors
 
@@ -457,27 +465,44 @@ class Database:
             if not anchors:
                 continue
             app = self.get_app(app_id) or {}
+            rows_out: list[dict] = []
             for anchor in anchors:
-                # Attribute each window using the ranks seen *in that window*, so a
-                # chart move mid-series doesn't mislabel earlier anchors.
+                # Ranks seen *in this window*, so a chart move mid-series cannot
+                # mislabel earlier anchors.
                 seg_rows = anchor.pop("_window_ranks", None) or rank_rows
-                country = _mode([r.get("country") for r in seg_rows]) or app.get("country") or "us"
-                list_type = _mode([r.get("list_type") for r in seg_rows]) or "top-free"
-                # Prefer the CHART segment where the rank was observed (usually
-                # "all") over app-metadata categories — keeps anchors poolable
-                # instead of fragmenting across dozens of Play categories.
-                category = (_mode([r.get("category") for r in seg_rows])
-                            or app.get("category") or "all")
-                anchor.update(
-                    {
-                        "category": category,
+                # IMPORTANT: an Android bucket delta is a WORLDWIDE flow (Play's
+                # realInstalls is global — verified byte-identical across every
+                # gl). The per-country thing we observe is the chart *rank*. So
+                # pair the one flow with EACH country's rank, giving a coherent
+                # "worldwide downloads at rank R in country C" observation per
+                # country. Previously the modal country won and the other
+                # countries' rank signal was discarded, which both threw away most
+                # of the data and made the country label depend on the accident of
+                # which country had more rank captures.
+                by_country: dict[str, list[dict]] = {}
+                for r in seg_rows:
+                    if r.get("rank"):
+                        by_country.setdefault(r.get("country") or "us", []).append(r)
+                if not by_country:
+                    continue
+                for country, crows in by_country.items():
+                    ranks = sorted(r["rank"] for r in crows)
+                    list_type = _mode([r.get("list_type") for r in crows]) or "top-free"
+                    # Prefer the CHART segment where the rank was observed (usually
+                    # "all") over app-metadata categories — keeps anchors poolable
+                    # instead of fragmenting across dozens of Play categories.
+                    category = (_mode([r.get("category") for r in crows])
+                                or app.get("category") or "all")
+                    rows_out.append({
+                        **anchor,
+                        "rank": ranks[len(ranks) // 2],
                         "country": country,
                         "list_type": list_type,
+                        "category": category,
                         # captured_on is the window end, set by derive_flow_anchors
                         "captured_on": anchor.get("captured_on") or buckets[-1]["captured_on"],
-                    }
-                )
-            inserted += self.insert_flow_anchors(anchors, source="local")
+                    })
+            inserted += self.insert_flow_anchors(rows_out, source="local")
         return inserted
 
     def load_example_anchors(

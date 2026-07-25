@@ -29,6 +29,14 @@ rating_count, captured_on
 These are public facts: a segment, a rank, an observed download flow (derived
 from the public Google Play `realInstalls` delta), and public bucket/metadata.
 
+> **Read `observed_downloads` as a WORLDWIDE flow.** Play's `realInstalls` is a
+> global cumulative counter (identical for every `gl`), so a delta is a global
+> figure — **not** downloads inside `country`. `country` records where the paired
+> chart **rank** was observed. A row therefore means *"worldwide downloads for an
+> app sitting at rank R in country C"*, and anything built on it must be presented
+> that way, never as country-level downloads. Rows are also **windowed**: each
+> covers `window_days` between two counter refreshes, not a calendar month.
+
 **`app_id` is intentionally omitted** — anchors need only (segment, rank, flow),
 never app identity. No personal data, no app identity, no ads, no creators.
 
