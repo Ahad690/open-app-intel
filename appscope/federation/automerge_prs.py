@@ -37,7 +37,12 @@ DEFAULT_ABUSE = {
     "max_monthly_downloads": 100_000_000,  # implausible per-month flow
     "min_unique_ratio": 0.5,          # duplicate-flooding floor
     "outlier_factor": 10,             # segment-median may differ at most this much
-    "outlier_min_rows": 3,            # min rows (PR and reference) to judge outlier
+    # Min rows (PR and reference) before the outlier check will judge a segment.
+    # Matches the >=5-anchors-per-segment threshold the estimator itself requires
+    # before it will calibrate: a distribution too thin to calibrate from is also
+    # too thin to call something an outlier against. (At 3, a handful of early
+    # artifact rows on main could gatekeep every legitimate contribution after.)
+    "outlier_min_rows": 5,
 }
 
 # Mirror of appscope.federation.contribute.BANNED. Kept inline so this script has

@@ -290,10 +290,11 @@ def test_abuse_scan_duplicate_flooding():
 def test_abuse_scan_distribution_outlier_vs_reference():
     from appscope.federation.automerge_prs import abuse_scan
     seg = {"platform": "android", "category": "all", "country": "us", "list_type": "top-free", "window_days": 30}
-    # Reference: ~100k/month at this segment (3 rows, enough to judge).
-    reference = [{**seg, "rank": r, "observed_downloads": 100_000} for r in (3, 4, 6)]
+    # Reference: ~100k/month at this segment. Needs >= outlier_min_rows (5) rows —
+    # a distribution too thin to calibrate from is too thin to judge outliers with.
+    reference = [{**seg, "rank": r, "observed_downloads": 100_000} for r in (3, 4, 6, 7, 9)]
     # PR: same segment but ~5,000,000/month (50x) -> outlier.
-    pr_rows = [{**seg, "rank": r, "observed_downloads": 5_000_000} for r in (3, 4, 6)]
+    pr_rows = [{**seg, "rank": r, "observed_downloads": 5_000_000} for r in (3, 4, 6, 7, 9)]
     reasons = abuse_scan(pr_rows, reference, None)
     assert any("outlier" in r for r in reasons)
 

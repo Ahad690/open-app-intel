@@ -65,6 +65,13 @@ MAX_MONTHLY_GROWTH_RATIO = 1.0  # implied monthly flow may not exceed the base i
 # side would hold. Keeping both sides consistent means we never mint an anchor we
 # know would be rejected.
 MAX_MONTHLY_DOWNLOADS = 100_000_000
+# Lower bound, same failure mode from the other direction: between refreshes the
+# counter barely moves, so a top-chart app can appear to have gained ~10 installs
+# in three days. We cannot distinguish "genuinely gained 10" from "counter has not
+# refreshed yet", so such a delta is *under-resolved*, not observed — and minting
+# it poisons calibration (and the shared reference distribution) far worse than
+# minting nothing. Expressed relative to the app's own base so it scales.
+MIN_MONTHLY_GROWTH_RATIO = 1e-4  # 0.01% of the install base per month
 
 
 def derive_flow_anchor(
@@ -105,6 +112,11 @@ def derive_flow_anchor(
 
     # Guard 3 — absolute ceiling, same figure the receiving side enforces.
     if monthly > MAX_MONTHLY_DOWNLOADS:
+        return None
+
+    # Guard 4 — under-resolved delta (counter had not refreshed). Refusing beats
+    # minting a number we cannot tell apart from measurement lag.
+    if monthly < b0["real_installs"] * MIN_MONTHLY_GROWTH_RATIO:
         return None
 
     return {

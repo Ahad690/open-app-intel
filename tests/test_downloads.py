@@ -103,6 +103,18 @@ def test_derive_flow_anchor_none_over_absolute_ceiling():
     assert derive_flow_anchor(buckets, ranks) is None
 
 
+def test_derive_flow_anchor_none_on_under_resolved_delta():
+    # The other half of the refresh artifact: between counter refreshes a top-chart
+    # app looks like it gained ~9 installs in 3 days. Indistinguishable from lag, so
+    # it must not be minted — these low rows poisoned the shared reference before.
+    buckets = [
+        {"min_installs": 10_000_000, "real_installs": 43_000_000, "captured_on": _d("2025-01-01")},
+        {"min_installs": 10_000_000, "real_installs": 43_000_009, "captured_on": _d("2025-01-04")},
+    ]
+    ranks = [{"rank": 11, "captured_on": _d("2025-01-02")}]
+    assert derive_flow_anchor(buckets, ranks) is None
+
+
 def test_derive_flow_anchor_none_on_implausible_growth():
     # A 4-day jump implying >100%/month growth of the base is a refresh artifact.
     buckets = [
