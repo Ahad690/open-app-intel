@@ -127,6 +127,76 @@ def derive_flow_anchor(
     }
 
 
+def _refresh_points(bucket_rows: list[dict]) -> list[dict]:
+    """The captures where the published counter actually changed.
+
+    ``realInstalls`` is republished in lumps (measured: 59% of daily captures show
+    no change; median 2 days between refreshes), so only a capture whose value
+    *differs* from the previous one marks a publication event. Those are the only
+    defensible window endpoints: pairing two publication points lets their shared
+    staleness largely cancel, whereas pairing a publication point with a frozen
+    reading measures Google's lag instead of the app's downloads.
+    """
+    pts: list[dict] = []
+    prev: int | None = None
+    for r in bucket_rows:
+        ri = r.get("real_installs")
+        if not ri:
+            continue
+        if prev is None or ri != prev:
+            pts.append(r)
+            prev = ri
+    return pts
+
+
+def _ranks_within(rank_rows: list[dict], start: object, end: object) -> list[dict]:
+    """Rank observations captured inside ``[start, end]`` (best-effort on dates)."""
+    out = []
+    try:
+        s, e = _as_date(start), _as_date(end)
+    except (TypeError, ValueError):
+        return out
+    for r in rank_rows:
+        try:
+            d = _as_date(r.get("captured_on"))
+        except (TypeError, ValueError):
+            continue
+        if s <= d <= e:
+            out.append(r)
+    return out
+
+
+def derive_flow_anchors(
+    bucket_rows: list[dict], rank_rows: list[dict]
+) -> list[dict]:
+    """Derive EVERY well-resolved flow anchor from one app's capture series.
+
+    ``derive_flow_anchor`` collapses a whole series into a single first-to-last
+    anchor, which throws away nearly all of it: a series holding a dozen counter
+    refreshes yields one anchor. Each consecutive pair of refresh points is itself
+    a real observation — a download flow over a known window at a known rank — so
+    pairing them recovers the full signal from captures already on disk, with no
+    additional requests.
+
+    Every candidate still goes through ``derive_flow_anchor``, so all four guards
+    (bucket-boundary, growth ratio, absolute ceiling, under-resolved) apply
+    unchanged; each anchor is stamped with the ``captured_on`` of its window end.
+    """
+    anchors: list[dict] = []
+    points = _refresh_points(bucket_rows)
+    for start, end in zip(points, points[1:]):
+        # Prefer ranks observed inside this window; fall back to the app's whole
+        # rank history rather than dropping an otherwise valid anchor.
+        window_ranks = _ranks_within(rank_rows, start.get("captured_on"),
+                                     end.get("captured_on")) or rank_rows
+        anchor = derive_flow_anchor([start, end], window_ranks)
+        if anchor:
+            anchor["captured_on"] = end.get("captured_on")
+            anchor["_window_ranks"] = window_ranks  # segment attribution by caller
+            anchors.append(anchor)
+    return anchors
+
+
 def calibrate_scale(
     anchors: Iterable[dict], a: float
 ) -> tuple[float | None, int]:

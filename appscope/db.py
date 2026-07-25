@@ -434,7 +434,7 @@ class Database:
         using the app's observed ranks over the window, tagged with the app's
         category and the modal (country, list_type) from its rank rows.
         """
-        from .estimate.calibrate import derive_flow_anchor
+        from .estimate.calibrate import derive_flow_anchors
 
         inserted = 0
         android_ids = [
@@ -451,27 +451,33 @@ class Database:
                 (app_id,),
             ).fetchall()
             rank_rows = [dict(r) for r in rank_rows]
-            anchor = derive_flow_anchor(buckets, rank_rows)
-            if not anchor:
+            # One anchor per counter-refresh window, not one per app: a series with
+            # a dozen refreshes carries a dozen real observations.
+            anchors = derive_flow_anchors(buckets, rank_rows)
+            if not anchors:
                 continue
             app = self.get_app(app_id) or {}
-            # Modal segment dims from the rank rows (fallbacks are conservative).
-            country = _mode([r.get("country") for r in rank_rows]) or app.get("country") or "us"
-            list_type = _mode([r.get("list_type") for r in rank_rows]) or "top-free"
-            # Prefer the CHART segment where the rank was observed (usually
-            # "all") over app-metadata categories — keeps anchors poolable
-            # instead of fragmenting across dozens of Play categories.
-            category = _mode([r.get("category") for r in rank_rows]) or app.get("category") or "all"
-            captured_on = buckets[-1]["captured_on"]
-            anchor.update(
-                {
-                    "category": category,
-                    "country": country,
-                    "list_type": list_type,
-                    "captured_on": captured_on,
-                }
-            )
-            inserted += self.insert_flow_anchors([anchor], source="local")
+            for anchor in anchors:
+                # Attribute each window using the ranks seen *in that window*, so a
+                # chart move mid-series doesn't mislabel earlier anchors.
+                seg_rows = anchor.pop("_window_ranks", None) or rank_rows
+                country = _mode([r.get("country") for r in seg_rows]) or app.get("country") or "us"
+                list_type = _mode([r.get("list_type") for r in seg_rows]) or "top-free"
+                # Prefer the CHART segment where the rank was observed (usually
+                # "all") over app-metadata categories — keeps anchors poolable
+                # instead of fragmenting across dozens of Play categories.
+                category = (_mode([r.get("category") for r in seg_rows])
+                            or app.get("category") or "all")
+                anchor.update(
+                    {
+                        "category": category,
+                        "country": country,
+                        "list_type": list_type,
+                        # captured_on is the window end, set by derive_flow_anchors
+                        "captured_on": anchor.get("captured_on") or buckets[-1]["captured_on"],
+                    }
+                )
+            inserted += self.insert_flow_anchors(anchors, source="local")
         return inserted
 
     def load_example_anchors(

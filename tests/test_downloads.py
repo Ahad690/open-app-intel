@@ -103,6 +103,53 @@ def test_derive_flow_anchor_none_over_absolute_ceiling():
     assert derive_flow_anchor(buckets, ranks) is None
 
 
+def test_derive_flow_anchors_uses_every_refresh_window():
+    """A realistic lumpy series: frozen stretches punctuated by refreshes. The
+    plural derivation must yield one anchor per refresh window (not one per app),
+    and must never use a frozen reading as an endpoint."""
+    from appscope.estimate.calibrate import derive_flow_anchors
+    base = 40_000_000
+    series = [  # +0 days are frozen; the counter republishes every ~3 days
+        (base,             "2025-01-01"),
+        (base,             "2025-01-02"),
+        (base,             "2025-01-03"),
+        (base + 900_000,   "2025-01-04"),   # refresh
+        (base + 900_000,   "2025-01-05"),
+        (base + 1_850_000, "2025-01-07"),   # refresh
+        (base + 1_850_000, "2025-01-08"),
+        (base + 2_700_000, "2025-01-10"),   # refresh
+    ]
+    buckets = [{"min_installs": 10_000_000, "real_installs": v, "captured_on": _d(d)}
+               for v, d in series]
+    ranks = [{"rank": 9, "captured_on": _d(d)} for _, d in series]
+    anchors = derive_flow_anchors(buckets, ranks)
+    # 4 refresh points -> 3 windows (vs exactly 1 anchor from the singular form).
+    assert len(anchors) == 3, anchors
+    assert derive_flow_anchor(buckets, ranks) is not None  # singular still works
+    assert all(a["observed_downloads"] > 0 for a in anchors)
+    # Windows span refresh-to-refresh (3d, 3d), never a 1-day frozen step.
+    assert {a["window_days"] for a in anchors} == {3}
+    # Each is stamped with its own window end, so they dedup as distinct rows.
+    assert len({a["captured_on"] for a in anchors}) == 3
+
+
+def test_derive_flow_anchors_still_applies_the_guards():
+    """The plural form must not become a bypass: an artifact window is dropped
+    while the clean windows around it are still recovered."""
+    from appscope.estimate.calibrate import derive_flow_anchors
+    buckets = [
+        {"min_installs": 10_000_000, "real_installs": 20_000_000, "captured_on": _d("2025-01-01")},
+        {"min_installs": 10_000_000, "real_installs": 20_400_000, "captured_on": _d("2025-01-04")},
+        # Absurd jump (>100%/mo of base and over the absolute ceiling) -> dropped.
+        {"min_installs": 10_000_000, "real_installs": 99_000_000, "captured_on": _d("2025-01-06")},
+        {"min_installs": 10_000_000, "real_installs": 99_400_000, "captured_on": _d("2025-01-09")},
+    ]
+    ranks = [{"rank": 15, "captured_on": _d("2025-01-03")}]
+    anchors = derive_flow_anchors(buckets, ranks)
+    assert len(anchors) == 2, anchors  # 3 windows, middle artifact rejected
+    assert all(a["observed_downloads"] == 400_000 for a in anchors)
+
+
 def test_derive_flow_anchor_none_on_under_resolved_delta():
     # The other half of the refresh artifact: between counter refreshes a top-chart
     # app looks like it gained ~9 installs in 3 days. Indistinguishable from lag, so
