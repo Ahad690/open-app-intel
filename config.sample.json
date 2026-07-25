@@ -14,7 +14,11 @@
       "jp"
     ],
     "categories": [
-      "all"
+      "all",
+      "GAME",
+      "PRODUCTIVITY",
+      "SOCIAL",
+      "TOOLS"
     ],
     "apps": [
       "com.example.app",

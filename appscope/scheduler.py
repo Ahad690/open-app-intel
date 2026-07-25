@@ -50,13 +50,25 @@ def _collect_android_charts(db: Database, cfg: Config, num: int = 100,
 
     inserted = 0
     fleet_joiners: list[str] = []
+    # "all" is Play's everything-chart (APPLICATION); anything else is a real Play
+    # category id. Chart requests are cheap (one per country x category) while the
+    # fleet re-collect is the expensive part, so extra categories contribute ranks
+    # freely but join the fleet conservatively — their top apps overlap heavily
+    # with the overall chart, which already pulls the top `bucket_top_n`.
+    categories = [c for c in (getattr(cfg.tracking, "categories", None) or ["all"])] or ["all"]
+    extra_top_n = max(1, bucket_top_n // 3)
     for country in cfg.tracking.countries:
-        rows = play_charts.fetch_play_chart(country=country, collection="top-free", num=num)
-        for row in rows:
-            db.upsert_app(row)
-            db.insert_rank(row)
-            inserted += 1
-        fleet_joiners.extend(r["app_id"] for r in rows[:bucket_top_n])
+        for cat in categories:
+            play_cat = "APPLICATION" if str(cat).lower() == "all" else str(cat).upper()
+            rows = play_charts.fetch_play_chart(
+                country=country, collection="top-free", num=num, category=play_cat
+            )
+            for row in rows:
+                db.upsert_app(row)
+                db.insert_rank(row)
+                inserted += 1
+            take = bucket_top_n if play_cat == "APPLICATION" else extra_top_n
+            fleet_joiners.extend(r["app_id"] for r in rows[:take])
     for app_id in dict.fromkeys(fleet_joiners):  # dedup, order-preserving
         try:
             _collect_app(db, cfg, app_id)

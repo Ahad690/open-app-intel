@@ -95,6 +95,12 @@ def fetch_play_chart(
         return []
 
     today = time.strftime("%Y-%m-%d")
+    # Segment label for the chart we just read. Play's "APPLICATION" chart is the
+    # everything-chart, so it keeps the existing "all" label — that preserves the
+    # large, poolable segments already calibrated. A specific category charts as
+    # itself, creating its own segment: rank 10 among Games implies a very
+    # different volume than rank 10 overall, which is the point of collecting it.
+    seg_category = "all" if category.upper() == "APPLICATION" else category.lower()
     rows: list[dict] = []
     for i, app in enumerate(apps):
         app_id = _dig(app, APP_ID_PATH)
@@ -107,8 +113,8 @@ def fetch_play_chart(
                 "platform": "android",
                 "name": _dig(app, TITLE_PATH),
                 "developer": _dig(app, DEVELOPER_PATH),
-                # chart segment dims - category "all" keeps anchors poolable
-                "category": "all",
+                # chart segment dims (see seg_category above)
+                "category": seg_category,
                 "country": country,
                 "list_type": collection,
                 "rank": i + 1,
