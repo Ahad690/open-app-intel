@@ -66,19 +66,33 @@ def _collect_android_charts(db: Database, cfg: Config, num: int = 100,
 
 
 def _collect_app(db: Database, cfg: Config, app_id: str) -> None:
-    """Collect metadata, install buckets (Android), and reviews for one tracked app."""
-    for country in cfg.tracking.countries:
-        if is_ios_id(app_id):
+    """Collect metadata, install buckets (Android), and reviews for one tracked app.
+
+    Android install buckets are captured ONCE, not once per country: Play's
+    ``minInstalls``/``realInstalls`` are worldwide cumulative figures and come back
+    byte-identical for every ``gl`` (verified across us/de/jp/br). Re-fetching them
+    per country multiplied request volume by the country count for zero additional
+    information, which made widening country coverage needlessly expensive — the
+    per-country signal that actually matters is the chart *rank*, collected in
+    ``_collect_android_charts`` at one request per country.
+    """
+    countries = list(cfg.tracking.countries) or ["us"]
+    if is_ios_id(app_id):
+        for country in countries:
             meta = itunes.fetch_itunes_metadata(app_id, country=country)
             if meta:
                 db.upsert_app(meta)
             db.insert_reviews(reviews.fetch_ios_reviews(app_id, country=country))
-        else:
-            meta = play.fetch_play_app(app_id, country=country)
-            if meta:
-                db.upsert_app(meta)
-                db.insert_install_bucket(meta)  # min/real installs (FR3)
-            db.insert_reviews(reviews.fetch_android_reviews(app_id, country=country))
+        return
+
+    # Android: one global metadata/bucket fetch...
+    meta = play.fetch_play_app(app_id, country=countries[0])
+    if meta:
+        db.upsert_app(meta)
+        db.insert_install_bucket(meta)  # min/real installs (FR3) - worldwide
+    # ...then per-country reviews, which genuinely are localized.
+    for country in countries:
+        db.insert_reviews(reviews.fetch_android_reviews(app_id, country=country))
 
 
 def run_collection(db: Database, cfg: Config) -> dict:
