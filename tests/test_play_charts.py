@@ -104,3 +104,30 @@ class TestAnchorPathUnlocked(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_apple_chart_category_is_the_chart_segment_not_a_localized_genre():
+    """Regression: apple_rss used the app's own genre name, localized per country,
+    as the chart segment. One real genre then counted as several
+    (Education/Éducation/Bildung/教育), and widening to 7 countries produced 99 iOS
+    category values. The overall charts are segment "all", matching play_charts."""
+    from unittest import mock
+    from appscope.collectors import apple_rss
+
+    payload = {"feed": {"results": [
+        {"id": "111", "name": "A", "artistName": "Dev",
+         "genres": [{"name": "Éducation"}]},
+        {"id": "222", "name": "B", "artistName": "Dev2",
+         "genres": [{"name": "Bildung"}]},
+    ]}}
+
+    class _R:
+        status_code = 200
+        def raise_for_status(self): pass
+        def json(self): return payload
+
+    with mock.patch.object(apple_rss, "polite_get", return_value=_R()):
+        rows = apple_rss.fetch_apple_chart(country="fr", feed="top-free", limit=2)
+    assert rows, "expected chart rows"
+    assert {r["category"] for r in rows} == {"all"}, [r["category"] for r in rows]
+    assert [r["rank"] for r in rows] == [1, 2]

@@ -50,9 +50,20 @@ def fetch_apple_chart(
                 "platform": "ios",
                 "name": a.get("name"),
                 "developer": a.get("artistName"),
-                "category": (a.get("genres") or [{}])[0].get("name", "all")
-                if a.get("genres")
-                else "all",
+                # The CHART segment, not the app's genre. These feeds are the
+                # overall top-free/top-paid charts, so the segment is "all" — the
+                # same convention play_charts uses for Play's APPLICATION chart.
+                #
+                # This field previously carried a.genres[0].name, i.e. the app's
+                # own genre *in the country's language*. That conflated "which
+                # chart this rank came from" with "what genre this app is", and
+                # localization shattered one real genre into many segments:
+                # Education / Éducation / Bildung / Educação / 教育 counted as
+                # five. Widening to 7 countries turned 2 iOS category values into
+                # 99, which would fragment any pooling keyed on the segment.
+                # The app's genre is owned by the metadata collector
+                # (itunes.primaryGenreName), which is where it belongs.
+                "category": "all",
                 "rank": i + 1,
                 "list_type": feed,
                 "country": country,
