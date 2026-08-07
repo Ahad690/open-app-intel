@@ -38,11 +38,21 @@ DEFAULT_ABUSE = {
     "min_unique_ratio": 0.5,          # duplicate-flooding floor
     "outlier_factor": 10,             # segment-median may differ at most this much
     # Min rows (PR and reference) before the outlier check will judge a segment.
-    # Matches the >=5-anchors-per-segment threshold the estimator itself requires
-    # before it will calibrate: a distribution too thin to calibrate from is also
-    # too thin to call something an outlier against. (At 3, a handful of early
-    # artifact rows on main could gatekeep every legitimate contribution after.)
-    "outlier_min_rows": 5,
+    #
+    # 5 was still far too thin, measured on real data: when per-category charts
+    # first landed, the brand-new `game` segments held n=3..11 rows whose medians
+    # ranged 193,920 to 22,349,580 across sibling countries — a 115x spread — and
+    # de/fr/gb reported an IDENTICAL 950,092 because one worldwide flow is paired
+    # with each country's rank, so rows are not independent and n overstates the
+    # real sample. On that basis the guard rejected a legitimate 2000-row
+    # contribution as a "57x outlier".
+    #
+    # A reference has to be established before it can arbitrate: 30 rows is enough
+    # for the median to stop swinging on a single app. Below that the check stays
+    # silent and the schema/PII/range/ceiling guards still apply — this only
+    # governs the *comparative* heuristic, which is the one that needs a
+    # trustworthy baseline.
+    "outlier_min_rows": 30,
 }
 
 # Mirror of appscope.federation.contribute.BANNED. Kept inline so this script has
