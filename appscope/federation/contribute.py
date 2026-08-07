@@ -159,6 +159,20 @@ def append_contributor(name: str, path: str = "CONTRIBUTORS.md") -> None:
         log.warning("could not update %s: %s", path, exc)
 
 
+def _max_rows_from_config(path: str, default: int = 2000) -> int:
+    """Rows-per-contribution cap, mirroring the receiver's anti-flood limit.
+
+    Read straight from the JSON so the sending side cannot drift from
+    ``federation.max_rows_per_pr`` — offering more than the receiver will accept
+    guarantees a permanently held PR.
+    """
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return int(json.load(fh).get("federation", {}).get("max_rows_per_pr", default))
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        return default
+
+
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     ap = argparse.ArgumentParser(description="Contribute public anchors to the HF dataset")
@@ -169,6 +183,13 @@ def main(argv: list[str] | None = None) -> int:
                     help="HF write token; cached for reuse (else $HF_TOKEN / cached token)")
     ap.add_argument("--existing", default=None,
                     help="JSON of anchors already in the dataset, for cross-file dedup")
+    ap.add_argument("--no-remote-dedup", action="store_true",
+                    help="skip fetching the dataset's merged anchors for dedup "
+                         "(offline; will re-offer rows already contributed)")
+    ap.add_argument("--max-rows", type=int, default=None,
+                    help="cap rows per contribution so a backlog drains over "
+                         "successive runs instead of exceeding the receiver's "
+                         "anti-flood cap (default: federation.max_rows_per_pr)")
     args = ap.parse_args(argv)
 
     cfg = load_config(args.config)
@@ -184,7 +205,35 @@ def main(argv: list[str] | None = None) -> int:
         except (OSError, json.JSONDecodeError) as exc:
             print(f"[warn] could not read --existing {args.existing}: {exc}")
 
+    # Dedup against what is ALREADY merged on the dataset. Without this every run
+    # re-offers the entire local history, which grows without bound and — once it
+    # passes the receiver's anti-flood cap — deadlocks: nothing merges, so the
+    # backlog grows, so nothing merges. Best-effort; offline just means no
+    # remote dedup, never a crash.
+    if existing is None and not args.no_remote_dedup:
+        try:
+            from huggingface_hub import HfApi
+
+            from .automerge_prs import load_main_reference
+
+            repo_id = _repo_id_from_url(cfg.federation.dataset_repo)
+            existing = load_main_reference(HfApi(), repo_id)
+            print(f"# {len(existing)} anchors already on {repo_id}; deduping against them")
+        except Exception as exc:  # noqa: BLE001
+            print(f"[warn] remote dedup unavailable ({type(exc).__name__}: {exc}); "
+                  "continuing without it")
+
     records = build_contribution(db, existing=existing)
+
+    # Bound one contribution so a large backlog drains across runs rather than
+    # tripping the receiver's cap forever.
+    cap = args.max_rows if args.max_rows is not None else _max_rows_from_config(args.config)
+    remaining = 0
+    if cap and len(records) > cap:
+        remaining = len(records) - cap
+        records = records[:cap]
+        print(f"# capped to {cap} row(s) this run; {remaining} still queued for the next run")
+
     print(f"# {len(records)} cleaned public anchor records (ads/creators excluded by guard):")
     print(json.dumps(records, indent=2))
 

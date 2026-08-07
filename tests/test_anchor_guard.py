@@ -454,3 +454,35 @@ def test_refresh_merges_and_recalibrates(tmp_path):
     # calibration was refit for the merged segment
     calib = db.get_calibration("android", "top-free", "all", "us")
     assert calib is not None and calib["n_anchors"] == 10
+
+
+def test_contribute_caps_rows_to_the_receiver_limit():
+    """Regression: contribute offered the entire local history every run with no
+    remote dedup, so the offer grew nightly and — once past the receiver's
+    max_rows anti-flood cap — deadlocked (nothing merged, so the backlog grew, so
+    nothing merged). 11 PRs stacked up at 2168..8597 rows before this was caught."""
+    import json
+    import tempfile
+    from appscope.federation.contribute import _max_rows_from_config
+
+    with tempfile.TemporaryDirectory() as d:
+        p = f"{d}/config.json"
+        with open(p, "w", encoding="utf-8") as fh:
+            json.dump({"federation": {"max_rows_per_pr": 1500}}, fh)
+        assert _max_rows_from_config(p) == 1500
+        # Missing/garbage config must fall back, never crash a contribution.
+        assert _max_rows_from_config(f"{d}/nope.json") == 2000
+        with open(f"{d}/bad.json", "w", encoding="utf-8") as fh:
+            fh.write("{not json")
+        assert _max_rows_from_config(f"{d}/bad.json") == 2000
+
+
+def test_contribute_dedups_against_already_merged_anchors():
+    """The sending side must skip rows already on the dataset, or it re-offers the
+    whole history forever."""
+    from appscope.federation.contribute import dedup
+
+    a = {"platform": "android", "rank": 5, "observed_downloads": 100, "window_days": 3}
+    b = {"platform": "android", "rank": 6, "observed_downloads": 200, "window_days": 3}
+    assert dedup([a, b], existing=[a]) == [b]
+    assert dedup([a, b], existing=[a, b]) == []
